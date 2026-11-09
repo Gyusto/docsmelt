@@ -4,371 +4,329 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DocSmelt</title>
-  <meta name="description" content="Convert, merge, split, organize, compress, OCR, protect, number and sign PDF, Word, Excel, PowerPoint and image files.">
+  <meta name="description" content="Convert, merge, split, organize, compress, OCR, watermark, number, protect and sign PDF, Word, Excel, PowerPoint and image files.">
   <meta name="theme-color" content="#6aa8ff">
+  <link rel="manifest" href="manifest.json">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="stylesheet" href="webjars/font-awesome/6.7.2/css/all.min.css">
   <link rel="stylesheet" href="style.css">
+  <script src="i18n.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
-  <main class="shell">
-    <header class="masthead">
-      <div class="brand">
-        <img src="favicon.svg" alt="" width="40" height="40">
-        <span class="wordmark">doc<b>smelt</b></span>
+  <header class="topbar">
+    <a class="brand" href="#" aria-label="DocSmelt home">
+      <img src="favicon.svg" alt="" width="36" height="36">
+      <span class="wordmark">doc<b>smelt</b></span>
+    </a>
+    <div class="top-actions">
+      <button type="button" id="install-btn" class="ghost" hidden>
+        <i class="fa-solid fa-download" aria-hidden="true"></i> <span data-i18n="install">Install app</span>
+      </button>
+      <div class="lang-switch" role="group" data-i18n-aria="lang.label">
+        <button type="button" data-lang="en" lang="en">EN</button>
+        <button type="button" data-lang="sw" lang="sw">SW</button>
       </div>
-      <p class="tagline">Convert, edit, protect and sign PDF, Word, Excel, PowerPoint and image files.</p>
-    </header>
+      <button type="button" id="theme-btn" class="icon-btn round"><i class="fa-solid fa-moon" aria-hidden="true"></i></button>
+    </div>
+  </header>
 
-    <nav class="tabs" role="tablist" aria-label="Tools">
-      <button role="tab" id="tab-convert" aria-controls="panel-convert" aria-selected="true">
-        <i class="fa-solid fa-right-left" aria-hidden="true"></i><span>Convert</span></button>
-      <button role="tab" id="tab-merge" aria-controls="panel-merge" aria-selected="false" tabindex="-1">
-        <i class="fa-solid fa-layer-group" aria-hidden="true"></i><span>Merge</span></button>
-      <button role="tab" id="tab-split" aria-controls="panel-split" aria-selected="false" tabindex="-1">
-        <i class="fa-solid fa-scissors" aria-hidden="true"></i><span>Split</span></button>
-      <button role="tab" id="tab-organize" aria-controls="panel-organize" aria-selected="false" tabindex="-1">
-        <i class="fa-solid fa-table-cells-large" aria-hidden="true"></i><span>Organize</span></button>
-      <button role="tab" id="tab-compress" aria-controls="panel-compress" aria-selected="false" tabindex="-1">
-        <i class="fa-solid fa-file-zipper" aria-hidden="true"></i><span>Compress</span></button>
-      <button role="tab" id="tab-images" aria-controls="panel-images" aria-selected="false" tabindex="-1">
-        <i class="fa-solid fa-images" aria-hidden="true"></i><span>Images to PDF</span></button>
-      <button role="tab" id="tab-ocr" aria-controls="panel-ocr" aria-selected="false" tabindex="-1">
-        <i class="fa-solid fa-spell-check" aria-hidden="true"></i><span>OCR</span></button>
-      <button role="tab" id="tab-protect" aria-controls="panel-protect" aria-selected="false" tabindex="-1">
-        <i class="fa-solid fa-lock" aria-hidden="true"></i><span>Protect</span></button>
-      <button role="tab" id="tab-number" aria-controls="panel-number" aria-selected="false" tabindex="-1">
-        <i class="fa-solid fa-list-ol" aria-hidden="true"></i><span>Page numbers</span></button>
-      <button role="tab" id="tab-sign" aria-controls="panel-sign" aria-selected="false" tabindex="-1">
-        <i class="fa-solid fa-signature" aria-hidden="true"></i><span>Sign</span></button>
-    </nav>
-
-    <!-- Convert -->
-    <section class="card" role="tabpanel" id="panel-convert" aria-labelledby="tab-convert">
-      <label class="dropzone">
-        <input type="file" multiple class="visually-hidden">
-        <i class="fa-solid fa-cloud-arrow-up dz-icon" aria-hidden="true"></i>
-        <span class="dz-title">Drop files here or <u>browse</u></span>
-        <span class="dz-hint">PDF, Word, Excel, PowerPoint, text or images</span>
-      </label>
-      <ul class="files" aria-live="polite"></ul>
-
-      <div class="row">
-        <label for="convert-to">Convert to</label>
-        <select id="convert-to" name="to"></select>
-      </div>
-
-      <details class="options">
-        <summary><i class="fa-solid fa-sliders" aria-hidden="true"></i> More options</summary>
-        <div class="grid">
-          <label>Pages <input name="pages" placeholder="all, e.g. 1-3,5" autocomplete="off"></label>
-          <label>Image DPI <input name="dpi" type="number" min="36" max="600" value="150"></label>
-          <label>JPEG quality <input name="quality" type="number" min="1" max="100" value="90"></label>
-        </div>
-      </details>
-
-      <button class="primary" data-action><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Convert</button>
-      <div class="status" role="status"></div>
-    </section>
-
-    <!-- Merge -->
-    <section class="card" role="tabpanel" id="panel-merge" aria-labelledby="tab-merge" hidden>
-      <label class="dropzone">
-        <input type="file" multiple class="visually-hidden">
-        <i class="fa-solid fa-copy dz-icon" aria-hidden="true"></i>
-        <span class="dz-title">Drop files to merge or <u>browse</u></span>
-        <span class="dz-hint">PDFs, plus Word, text or images (converted automatically)</span>
-      </label>
-      <ul class="files" aria-live="polite"></ul>
-      <p class="note"><i class="fa-solid fa-arrow-down-short-wide" aria-hidden="true"></i>
-        Files are merged top to bottom. Use the arrows to reorder.</p>
-
-      <button class="primary" data-action><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Merge into one PDF</button>
-      <div class="status" role="status"></div>
-    </section>
-
-    <!-- Split -->
-    <section class="card" role="tabpanel" id="panel-split" aria-labelledby="tab-split" hidden>
-      <label class="dropzone">
-        <input type="file" accept=".pdf,application/pdf" class="visually-hidden">
-        <i class="fa-solid fa-file-pdf dz-icon" aria-hidden="true"></i>
-        <span class="dz-title">Drop a PDF here or <u>browse</u></span>
-        <span class="dz-hint">One PDF at a time</span>
-      </label>
-      <ul class="files" aria-live="polite"></ul>
-
-      <fieldset class="choice">
-        <legend>How to split</legend>
-        <label><input type="radio" name="mode" value="every" checked>
-          Every <input name="every" type="number" min="1" value="1" class="inline-num" aria-label="Pages per file"> page(s)</label>
-        <label><input type="radio" name="mode" value="ranges">
-          Custom ranges <input name="ranges" placeholder="1-3,4-9,10-" class="inline-text" aria-label="Page ranges" autocomplete="off"></label>
-      </fieldset>
-
-      <button class="primary" data-action><i class="fa-solid fa-scissors" aria-hidden="true"></i> Split PDF</button>
-      <div class="status" role="status"></div>
-    </section>
-
-    <!-- Organize -->
-    <section class="card" role="tabpanel" id="panel-organize" aria-labelledby="tab-organize" hidden>
-      <label class="dropzone">
-        <input type="file" accept=".pdf,application/pdf" class="visually-hidden">
-        <i class="fa-solid fa-table-cells-large dz-icon" aria-hidden="true"></i>
-        <span class="dz-title">Drop a PDF here or <u>browse</u></span>
-        <span class="dz-hint">Rotate, delete and reorder its pages</span>
-      </label>
-      <ul class="files" aria-live="polite"></ul>
-
-      <div class="pages-toolbar" hidden>
-        <span class="page-count"></span>
-        <span class="spacer"></span>
-        <button type="button" class="ghost" data-rotate-all="-90"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i> All</button>
-        <button type="button" class="ghost" data-rotate-all="90"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> All</button>
-        <button type="button" class="ghost" data-reset><i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i> Reset</button>
-      </div>
-      <ol class="page-grid" aria-label="Pages"></ol>
-      <p class="note pages-hint" hidden><i class="fa-solid fa-hand-pointer" aria-hidden="true"></i>
-        Drag pages to reorder, or use the buttons on each page.</p>
-
-      <button class="primary" data-action><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save PDF</button>
-      <div class="status" role="status"></div>
-    </section>
-
-    <!-- Compress -->
-    <section class="card" role="tabpanel" id="panel-compress" aria-labelledby="tab-compress" hidden>
-      <label class="dropzone">
-        <input type="file" multiple accept=".pdf,application/pdf" class="visually-hidden">
-        <i class="fa-solid fa-file-zipper dz-icon" aria-hidden="true"></i>
-        <span class="dz-title">Drop PDFs here or <u>browse</u></span>
-        <span class="dz-hint">Shrinks images inside the PDF; text stays sharp</span>
-      </label>
-      <ul class="files" aria-live="polite"></ul>
-
-      <fieldset class="levels">
-        <legend>Compression</legend>
-        <label class="level"><input type="radio" name="level" value="low">
-          <span><b>Light</b><small>Best quality</small></span></label>
-        <label class="level"><input type="radio" name="level" value="medium" checked>
-          <span><b>Recommended</b><small>Good quality, much smaller</small></span></label>
-        <label class="level"><input type="radio" name="level" value="high">
-          <span><b>Strong</b><small>Smallest file</small></span></label>
-      </fieldset>
-
-      <button class="primary" data-action><i class="fa-solid fa-file-zipper" aria-hidden="true"></i> Compress PDF</button>
-      <div class="status" role="status"></div>
-    </section>
-
-    <!-- Images to PDF -->
-    <section class="card" role="tabpanel" id="panel-images" aria-labelledby="tab-images" hidden>
-      <label class="dropzone">
-        <input type="file" multiple accept=".jpg,.jpeg,.png,.bmp,.gif,image/*" class="visually-hidden">
-        <i class="fa-solid fa-images dz-icon" aria-hidden="true"></i>
-        <span class="dz-title">Drop images here or <u>browse</u></span>
-        <span class="dz-hint">Photos, scans or screenshots, one per page</span>
-      </label>
-      <ul class="files" aria-live="polite"></ul>
-
-      <div class="grid two">
-        <label>Page size
-          <select name="pageSize">
-            <option value="a4">A4</option>
-            <option value="letter">US Letter</option>
-            <option value="fit">Same as image</option>
-          </select>
-        </label>
-        <label>Margin
-          <select name="margin">
-            <option value="none">None</option>
-            <option value="small" selected>Small</option>
-            <option value="normal">Normal</option>
-          </select>
+  <main id="main">
+    <section class="view home" id="view-home">
+      <div class="hero">
+        <h1 data-i18n="home.title">Every document tool you need</h1>
+        <p class="tagline" data-i18n="app.tagline"></p>
+        <label class="search">
+          <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+          <input id="tool-search" type="search" autocomplete="off" data-i18n-placeholder="search.placeholder" data-i18n-aria="search.label">
+          <kbd>/</kbd>
         </label>
       </div>
-
-      <button class="primary" data-action><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> Create PDF</button>
-      <div class="status" role="status"></div>
+      <div id="tool-groups"></div>
+      <p id="search-empty" class="search-empty" hidden></p>
     </section>
-
-    <!-- OCR -->
-    <section class="card" role="tabpanel" id="panel-ocr" aria-labelledby="tab-ocr" hidden>
-      <p class="notice" hidden><i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-        OCR isn't installed on this server. Run DocSmelt with Docker to get it, or install Tesseract.</p>
-      <label class="dropzone">
-        <input type="file" accept=".pdf,.jpg,.jpeg,.png,.bmp,.gif,application/pdf,image/*" class="visually-hidden">
-        <i class="fa-solid fa-spell-check dz-icon" aria-hidden="true"></i>
-        <span class="dz-title">Drop a scan or photo here or <u>browse</u></span>
-        <span class="dz-hint">Scanned PDF or image; text gets recognized</span>
-      </label>
-      <ul class="files" aria-live="polite"></ul>
-
-      <div class="grid two">
-        <label>Language <select name="lang"></select></label>
-        <label>Result
-          <select name="output">
-            <option value="pdf">Searchable PDF</option>
-            <option value="docx">Word (.docx)</option>
-            <option value="txt">Text (.txt)</option>
-          </select>
-        </label>
-        <label>Pages <input name="pages" placeholder="all, e.g. 1-5" autocomplete="off"></label>
-      </div>
-
-      <button class="primary" data-action><i class="fa-solid fa-spell-check" aria-hidden="true"></i> Recognize text</button>
-      <div class="status" role="status"></div>
-    </section>
-
-    <!-- Protect / unlock -->
-    <section class="card" role="tabpanel" id="panel-protect" aria-labelledby="tab-protect" hidden>
-      <label class="dropzone">
-        <input type="file" accept=".pdf,application/pdf" class="visually-hidden">
-        <i class="fa-solid fa-lock dz-icon" aria-hidden="true"></i>
-        <span class="dz-title">Drop a PDF here or <u>browse</u></span>
-        <span class="dz-hint">Add a password, or remove one you know</span>
-      </label>
-      <ul class="files" aria-live="polite"></ul>
-
-      <fieldset class="segmented">
-        <legend class="visually-hidden">What to do</legend>
-        <label><input type="radio" name="secMode" value="protect" checked>
-          <span><i class="fa-solid fa-lock" aria-hidden="true"></i> Add password</span></label>
-        <label><input type="radio" name="secMode" value="unlock">
-          <span><i class="fa-solid fa-lock-open" aria-hidden="true"></i> Remove password</span></label>
-      </fieldset>
-
-      <div class="grid two">
-        <label>Password
-          <span class="pw">
-            <input type="password" name="password" autocomplete="new-password" minlength="4">
-            <button type="button" class="icon-btn" data-reveal title="Show password" aria-label="Show password"><i class="fa-solid fa-eye" aria-hidden="true"></i></button>
-          </span>
-        </label>
-        <label data-protect-only>Repeat password <input type="password" name="confirm" autocomplete="new-password"></label>
-      </div>
-
-      <fieldset class="checks" data-protect-only>
-        <legend>People who open it may</legend>
-        <label><input type="checkbox" name="allowPrint" checked> Print</label>
-        <label><input type="checkbox" name="allowCopy" checked> Copy text</label>
-        <label><input type="checkbox" name="allowEdit" checked> Edit</label>
-      </fieldset>
-      <p class="note" data-protect-only><i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-        Keep the password somewhere safe: a lost password can't be recovered.</p>
-
-      <button class="primary" data-action><i class="fa-solid fa-lock" aria-hidden="true"></i> <span data-label>Protect PDF</span></button>
-      <div class="status" role="status"></div>
-    </section>
-
-    <!-- Page numbers -->
-    <section class="card" role="tabpanel" id="panel-number" aria-labelledby="tab-number" hidden>
-      <label class="dropzone">
-        <input type="file" accept=".pdf,application/pdf" class="visually-hidden">
-        <i class="fa-solid fa-list-ol dz-icon" aria-hidden="true"></i>
-        <span class="dz-title">Drop a PDF here or <u>browse</u></span>
-        <span class="dz-hint">Adds numbers to every page</span>
-      </label>
-      <ul class="files" aria-live="polite"></ul>
-
-      <div class="number-layout">
-        <fieldset class="positions">
-          <legend>Position</legend>
-          <div class="mini-page">
-            <label title="Top left"><input type="radio" name="position" value="top-left" aria-label="Top left"></label>
-            <label title="Top center"><input type="radio" name="position" value="top-center" aria-label="Top center"></label>
-            <label title="Top right"><input type="radio" name="position" value="top-right" aria-label="Top right"></label>
-            <span class="lines" aria-hidden="true"></span>
-            <label title="Bottom left"><input type="radio" name="position" value="bottom-left" aria-label="Bottom left"></label>
-            <label title="Bottom center"><input type="radio" name="position" value="bottom-center" aria-label="Bottom center" checked></label>
-            <label title="Bottom right"><input type="radio" name="position" value="bottom-right" aria-label="Bottom right"></label>
-          </div>
-        </fieldset>
-        <div class="grid two">
-          <label>Style
-            <select name="format">
-              <option value="{n}">1</option>
-              <option value="Page {n}">Page 1</option>
-              <option value="Page {n} of {total}">Page 1 of 10</option>
-              <option value="{n} / {total}">1 / 10</option>
-              <option value="- {n} -">- 1 -</option>
-            </select>
-          </label>
-          <label>Size
-            <select name="size">
-              <option value="9">Small</option>
-              <option value="11" selected>Medium</option>
-              <option value="14">Large</option>
-            </select>
-          </label>
-          <label>First number <input type="number" name="start" min="0" value="1"></label>
-          <label class="check-inline"><input type="checkbox" name="skipFirst"> Skip the first page (cover)</label>
-        </div>
-      </div>
-
-      <button class="primary" data-action><i class="fa-solid fa-list-ol" aria-hidden="true"></i> Add page numbers</button>
-      <div class="status" role="status"></div>
-    </section>
-
-    <!-- Sign -->
-    <section class="card" role="tabpanel" id="panel-sign" aria-labelledby="tab-sign" hidden>
-      <label class="dropzone">
-        <input type="file" accept=".pdf,application/pdf" class="visually-hidden">
-        <i class="fa-solid fa-signature dz-icon" aria-hidden="true"></i>
-        <span class="dz-title">Drop a PDF to sign or <u>browse</u></span>
-        <span class="dz-hint">Draw, type or upload your signature</span>
-      </label>
-      <ul class="files" aria-live="polite"></ul>
-
-      <div class="sign-maker">
-        <fieldset class="segmented">
-          <legend>Your signature</legend>
-          <label><input type="radio" name="sigMode" value="draw" checked><span><i class="fa-solid fa-pen-nib" aria-hidden="true"></i> Draw</span></label>
-          <label><input type="radio" name="sigMode" value="type"><span><i class="fa-solid fa-keyboard" aria-hidden="true"></i> Type</span></label>
-          <label><input type="radio" name="sigMode" value="upload"><span><i class="fa-solid fa-image" aria-hidden="true"></i> Upload</span></label>
-        </fieldset>
-        <div data-sig="draw" class="sig-pad">
-          <canvas class="sig-canvas" aria-label="Signature drawing area"></canvas>
-          <span class="sig-hint">Sign here with your mouse or finger</span>
-          <button type="button" class="ghost sig-clear"><i class="fa-solid fa-eraser" aria-hidden="true"></i> Clear</button>
-        </div>
-        <div data-sig="type" hidden>
-          <input name="sigText" placeholder="Type your name" autocomplete="name" class="sig-type-input">
-        </div>
-        <div data-sig="upload" hidden>
-          <input type="file" name="sigFile" accept="image/png,image/jpeg,image/gif,image/bmp">
-          <p class="note">A PNG with a transparent background looks best.</p>
-        </div>
-      </div>
-
-      <div class="sign-place" hidden>
-        <div class="row">
-          <label for="sign-page">Page</label>
-          <select id="sign-page" name="signPage"></select>
-        </div>
-        <div class="sign-stage">
-          <img class="sign-page-img" alt="Page preview">
-          <div class="sig-box" tabindex="0" role="img" aria-label="Signature position. Use arrow keys to move, plus and minus to resize.">
-            <img class="sig-preview" alt="">
-            <span class="sig-placeholder">Your signature</span>
-            <span class="sig-handle" aria-hidden="true"></span>
-          </div>
-        </div>
-        <p class="note"><i class="fa-solid fa-up-down-left-right" aria-hidden="true"></i>
-          Drag the signature into place and pull the corner to resize (or use the arrow keys and +/−).</p>
-      </div>
-      <p class="note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-        This places an image of your signature, like signing a printout. It is not a certified digital signature.</p>
-
-      <button class="primary" data-action><i class="fa-solid fa-file-signature" aria-hidden="true"></i> Sign PDF</button>
-      <div class="status" role="status"></div>
-    </section>
-
-    <footer class="foot">
-      <span id="limits"></span>
-      <span><i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
-        Files are processed on this server and deleted immediately afterwards.</span>
-    </footer>
+    <!-- Tool pages are built by app.js from the templates below. -->
   </main>
+
+  <footer class="foot">
+    <span id="limits"></span>
+    <span><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> <span data-i18n="foot.privacy"></span></span>
+  </footer>
+
+  <!-- ====================== Tool options (left column) ====================== -->
+
+  <template id="opts-convert">
+    <div class="row">
+      <label for="convert-to" data-i18n="cv.to"></label>
+      <select id="convert-to" name="to"></select>
+    </div>
+    <details class="options">
+      <summary><i class="fa-solid fa-sliders" aria-hidden="true"></i> <span data-i18n="cv.more"></span></summary>
+      <div class="grid two">
+        <label><span data-i18n="cv.pages"></span> <input name="pages" data-i18n-placeholder="cv.pagesPh" autocomplete="off"></label>
+        <label><span data-i18n="cv.dpi"></span> <input name="dpi" type="number" min="36" max="600" value="150"></label>
+        <label><span data-i18n="cv.quality"></span> <input name="quality" type="number" min="1" max="100" value="90"></label>
+      </div>
+    </details>
+  </template>
+
+  <template id="opts-merge">
+    <p class="note"><i class="fa-solid fa-arrow-down-short-wide" aria-hidden="true"></i> <span data-i18n="mg.note"></span></p>
+  </template>
+
+  <template id="opts-split">
+    <fieldset class="choice">
+      <legend data-i18n="sp.how"></legend>
+      <label><input type="radio" name="mode" value="every" checked>
+        <span data-i18n="sp.every"></span> <input name="every" type="number" min="1" value="1" class="inline-num" data-i18n-aria="sp.everyLabel"> <span data-i18n="sp.pages"></span></label>
+      <label><input type="radio" name="mode" value="ranges">
+        <span data-i18n="sp.ranges"></span> <input name="ranges" placeholder="1-3,4-9,10-" class="inline-text" data-i18n-aria="sp.rangesLabel" autocomplete="off"></label>
+    </fieldset>
+  </template>
+
+  <template id="opts-organize">
+    <div class="pages-toolbar" hidden>
+      <span class="page-count"></span>
+      <span class="spacer"></span>
+      <button type="button" class="ghost" data-rotate-all="-90" data-i18n-aria="org.rotAllL"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i> <span data-i18n="org.all"></span></button>
+      <button type="button" class="ghost" data-rotate-all="90" data-i18n-aria="org.rotAllR"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> <span data-i18n="org.all"></span></button>
+      <button type="button" class="ghost" data-reset><i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i> <span data-i18n="org.reset"></span></button>
+    </div>
+    <p class="note pages-hint" hidden><i class="fa-solid fa-hand-pointer" aria-hidden="true"></i> <span data-i18n="org.hint"></span></p>
+  </template>
+  <template id="side-organize">
+    <div class="side-empty"><i class="fa-regular fa-file-lines" aria-hidden="true"></i><p data-i18n="org.empty"></p></div>
+    <ol class="page-grid" aria-label="Pages"></ol>
+  </template>
+
+  <template id="opts-crop">
+    <fieldset class="segmented stack">
+      <legend data-i18n="cr.mode"></legend>
+      <label><input type="radio" name="cropMode" value="auto" checked><span><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> <span data-i18n="cr.auto"></span></span></label>
+      <label><input type="radio" name="cropMode" value="margin"><span><i class="fa-solid fa-crop-simple" aria-hidden="true"></i> <span data-i18n="cr.margin"></span></span></label>
+      <label><input type="radio" name="cropMode" value="resize"><span><i class="fa-solid fa-expand" aria-hidden="true"></i> <span data-i18n="cr.resize"></span></span></label>
+    </fieldset>
+    <p class="note" data-crop="auto"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> <span data-i18n="cr.autoNote"></span></p>
+    <div class="grid two" data-crop="margin" hidden>
+      <label><span data-i18n="cr.mm"></span> <input name="margin" type="number" min="1" max="100" value="10"></label>
+    </div>
+    <div class="grid two" data-crop="resize" hidden>
+      <label><span data-i18n="cr.paper"></span>
+        <select name="paper">
+          <option value="a4">A4</option><option value="letter" data-i18n="im.letter"></option>
+          <option value="a3">A3</option><option value="a5">A5</option><option value="legal">Legal</option>
+        </select>
+      </label>
+      <p class="note"><span data-i18n="cr.resizeNote"></span></p>
+    </div>
+  </template>
+
+  <template id="opts-extract">
+    <div class="grid two">
+      <label><span data-i18n="ex.pages"></span> <input name="pages" data-i18n-placeholder="ex.pagesPh" autocomplete="off"></label>
+    </div>
+    <p class="note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> <span data-i18n="ex.note"></span></p>
+  </template>
+
+  <template id="opts-compress">
+    <fieldset class="levels">
+      <legend data-i18n="cp.level"></legend>
+      <label class="level"><input type="radio" name="level" value="low"><span><b data-i18n="cp.low"></b><small data-i18n="cp.lowD"></small></span></label>
+      <label class="level"><input type="radio" name="level" value="medium" checked><span><b data-i18n="cp.med"></b><small data-i18n="cp.medD"></small></span></label>
+      <label class="level"><input type="radio" name="level" value="high"><span><b data-i18n="cp.high"></b><small data-i18n="cp.highD"></small></span></label>
+    </fieldset>
+  </template>
+
+  <template id="opts-images">
+    <div class="grid two">
+      <label><span data-i18n="im.size"></span>
+        <select name="pageSize">
+          <option value="a4">A4</option>
+          <option value="letter" data-i18n="im.letter"></option>
+          <option value="fit" data-i18n="im.fit"></option>
+        </select>
+      </label>
+      <label><span data-i18n="im.margin"></span>
+        <select name="margin">
+          <option value="none" data-i18n="im.none"></option>
+          <option value="small" selected data-i18n="im.small"></option>
+          <option value="normal" data-i18n="im.normal"></option>
+        </select>
+      </label>
+    </div>
+  </template>
+
+  <template id="opts-ocr">
+    <p class="notice" hidden><i class="fa-solid fa-circle-info" aria-hidden="true"></i> <span data-i18n="oc.off"></span></p>
+    <div class="grid two">
+      <label><span data-i18n="oc.lang"></span> <select name="lang"></select></label>
+      <label><span data-i18n="oc.result"></span>
+        <select name="output">
+          <option value="pdf" data-i18n="oc.pdf"></option>
+          <option value="docx" data-i18n="oc.docx"></option>
+          <option value="txt" data-i18n="oc.txt"></option>
+        </select>
+      </label>
+      <label><span data-i18n="oc.pages"></span> <input name="pages" data-i18n-placeholder="oc.pagesPh" autocomplete="off"></label>
+    </div>
+  </template>
+
+  <template id="opts-watermark">
+    <fieldset class="segmented">
+      <legend data-i18n="wm.kind"></legend>
+      <label><input type="radio" name="wmKind" value="text" checked><span><i class="fa-solid fa-font" aria-hidden="true"></i> <span data-i18n="wm.text"></span></span></label>
+      <label><input type="radio" name="wmKind" value="image"><span><i class="fa-solid fa-image" aria-hidden="true"></i> <span data-i18n="wm.image"></span></span></label>
+    </fieldset>
+    <div class="grid two" data-wm="text">
+      <label class="wide"><span data-i18n="wm.text"></span> <input name="wmText" maxlength="80" autocomplete="off"></label>
+      <label><span data-i18n="wm.color"></span> <input name="color" type="color" value="#c73a2a"></label>
+    </div>
+    <div data-wm="image" hidden>
+      <input type="file" name="wmFile" accept="image/png,image/jpeg,image/gif,image/bmp">
+      <p class="note" data-i18n="wm.imgNote"></p>
+    </div>
+    <div class="grid two">
+      <label><span data-i18n="wm.opacity"></span> <span class="range"><input name="opacity" type="range" min="5" max="100" value="25"><output>25%</output></span></label>
+      <label><span data-i18n="wm.angle"></span>
+        <select name="angle">
+          <option value="45" data-i18n="wm.diagonal"></option>
+          <option value="0" data-i18n="wm.horizontal"></option>
+          <option value="90" data-i18n="wm.vertical"></option>
+        </select>
+      </label>
+      <label><span data-i18n="wm.layout"></span>
+        <select name="layout">
+          <option value="center" data-i18n="wm.center"></option>
+          <option value="tile" data-i18n="wm.tile"></option>
+        </select>
+      </label>
+      <label><span data-i18n="wm.pages"></span>
+        <select name="wmPages">
+          <option value="" data-i18n="wm.all"></option>
+          <option value="2-" data-i18n="wm.skipFirst"></option>
+        </select>
+      </label>
+    </div>
+  </template>
+
+  <template id="opts-number">
+    <div class="number-layout">
+      <fieldset class="positions">
+        <legend data-i18n="nm.pos"></legend>
+        <div class="mini-page">
+          <label data-i18n-aria="nm.tl"><input type="radio" name="position" value="top-left"></label>
+          <label data-i18n-aria="nm.tc"><input type="radio" name="position" value="top-center"></label>
+          <label data-i18n-aria="nm.tr"><input type="radio" name="position" value="top-right"></label>
+          <span class="lines" aria-hidden="true"></span>
+          <label data-i18n-aria="nm.bl"><input type="radio" name="position" value="bottom-left"></label>
+          <label data-i18n-aria="nm.bc"><input type="radio" name="position" value="bottom-center" checked></label>
+          <label data-i18n-aria="nm.br"><input type="radio" name="position" value="bottom-right"></label>
+        </div>
+      </fieldset>
+      <div class="grid two">
+        <label><span data-i18n="nm.style"></span> <select name="format"></select></label>
+        <label><span data-i18n="nm.size"></span>
+          <select name="size">
+            <option value="9" data-i18n="nm.small"></option>
+            <option value="11" selected data-i18n="nm.medium"></option>
+            <option value="14" data-i18n="nm.large"></option>
+          </select>
+        </label>
+        <label><span data-i18n="nm.first"></span> <input type="number" name="start" min="0" value="1"></label>
+        <label class="check-inline"><input type="checkbox" name="skipFirst"> <span data-i18n="nm.skip"></span></label>
+      </div>
+    </div>
+  </template>
+
+  <template id="opts-protect">
+    <fieldset class="segmented">
+      <legend class="visually-hidden" data-i18n="pr.what"></legend>
+      <label><input type="radio" name="secMode" value="protect" checked><span><i class="fa-solid fa-lock" aria-hidden="true"></i> <span data-i18n="pr.add"></span></span></label>
+      <label><input type="radio" name="secMode" value="unlock"><span><i class="fa-solid fa-lock-open" aria-hidden="true"></i> <span data-i18n="pr.remove"></span></span></label>
+    </fieldset>
+    <div class="grid two">
+      <label><span data-i18n="pr.pw"></span>
+        <span class="pw">
+          <input type="password" name="password" autocomplete="new-password" minlength="4">
+          <button type="button" class="icon-btn" data-reveal><i class="fa-solid fa-eye" aria-hidden="true"></i></button>
+        </span>
+      </label>
+      <label data-protect-only><span data-i18n="pr.repeat"></span> <input type="password" name="confirm" autocomplete="new-password"></label>
+    </div>
+    <fieldset class="checks" data-protect-only>
+      <legend data-i18n="pr.may"></legend>
+      <label><input type="checkbox" name="allowPrint" checked> <span data-i18n="pr.print"></span></label>
+      <label><input type="checkbox" name="allowCopy" checked> <span data-i18n="pr.copy"></span></label>
+      <label><input type="checkbox" name="allowEdit" checked> <span data-i18n="pr.edit"></span></label>
+    </fieldset>
+    <p class="note" data-protect-only><i class="fa-solid fa-circle-info" aria-hidden="true"></i> <span data-i18n="pr.keep"></span></p>
+  </template>
+
+  <template id="opts-sign">
+    <div class="sign-maker">
+      <fieldset class="segmented">
+        <legend data-i18n="sg.your"></legend>
+        <label><input type="radio" name="sigMode" value="draw" checked><span><i class="fa-solid fa-pen-nib" aria-hidden="true"></i> <span data-i18n="sg.draw"></span></span></label>
+        <label><input type="radio" name="sigMode" value="type"><span><i class="fa-solid fa-keyboard" aria-hidden="true"></i> <span data-i18n="sg.type"></span></span></label>
+        <label><input type="radio" name="sigMode" value="upload"><span><i class="fa-solid fa-image" aria-hidden="true"></i> <span data-i18n="sg.upload"></span></span></label>
+      </fieldset>
+      <div data-sig="draw" class="sig-pad">
+        <canvas class="sig-canvas" data-i18n-aria="sg.canvas"></canvas>
+        <span class="sig-hint" data-i18n="sg.here"></span>
+        <button type="button" class="ghost sig-clear"><i class="fa-solid fa-eraser" aria-hidden="true"></i> <span data-i18n="sg.clear"></span></button>
+      </div>
+      <div data-sig="type" hidden>
+        <input name="sigText" data-i18n-placeholder="sg.typePh" autocomplete="name" class="sig-type-input">
+      </div>
+      <div data-sig="upload" hidden>
+        <input type="file" name="sigFile" accept="image/png,image/jpeg,image/gif,image/bmp">
+        <p class="note" data-i18n="sg.uploadNote"></p>
+      </div>
+    </div>
+    <div class="row sign-page-row" hidden>
+      <label for="sign-page" data-i18n="sg.page"></label>
+      <select id="sign-page" name="signPage"></select>
+    </div>
+    <p class="note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> <span data-i18n="sg.disclaimer"></span></p>
+  </template>
+  <template id="side-sign">
+    <div class="side-empty"><i class="fa-solid fa-signature" aria-hidden="true"></i><p data-i18n="sg.empty"></p></div>
+    <div class="sign-place" hidden>
+      <div class="sign-stage">
+        <img class="sign-page-img" alt="">
+        <div class="sig-box" tabindex="0" role="img" data-i18n-aria="sg.box">
+          <img class="sig-preview" alt="">
+          <span class="sig-placeholder" data-i18n="sg.placeholder"></span>
+          <span class="sig-handle" aria-hidden="true"></span>
+        </div>
+      </div>
+      <p class="note"><i class="fa-solid fa-up-down-left-right" aria-hidden="true"></i> <span data-i18n="sg.place"></span></p>
+    </div>
+  </template>
+
+  <!-- Generic right-hand preview, used by every tool without its own side panel. -->
+  <template id="side-preview">
+    <div class="pv-head">
+      <h2 data-i18n="pv.title"></h2>
+      <div class="pv-switch" role="group" hidden>
+        <button type="button" data-which="before" data-i18n="pv.before"></button>
+        <button type="button" data-which="after" data-i18n="pv.after"></button>
+      </div>
+    </div>
+    <div class="pv-body">
+      <div class="side-empty pv-empty"><i class="fa-regular fa-file" aria-hidden="true"></i><p data-i18n="pv.empty"></p></div>
+      <img class="pv-img" alt="" hidden>
+      <div class="pv-msg" hidden></div>
+      <div class="pv-loading" hidden><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> <span data-i18n="pv.loading"></span></div>
+    </div>
+    <div class="pv-pager" hidden>
+      <button type="button" class="icon-btn" data-step="-1" data-i18n-aria="pv.prev"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></button>
+      <span class="pv-count"></span>
+      <button type="button" class="icon-btn" data-step="1" data-i18n-aria="pv.next"><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
+    </div>
+    <p class="pv-name"></p>
+  </template>
 </body>
 </html>

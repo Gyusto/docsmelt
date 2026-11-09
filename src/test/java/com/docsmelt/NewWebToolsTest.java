@@ -1,6 +1,8 @@
 package com.docsmelt;
 
 import com.docsmelt.core.Converter;
+import com.docsmelt.model.Document;
+import com.docsmelt.model.Paragraph;
 import com.docsmelt.ocr.OcrService;
 import com.docsmelt.web.ServerConfig;
 import com.docsmelt.web.WebServer;
@@ -178,6 +180,43 @@ class NewWebToolsTest {
         assertEquals(3, pages(signed.body()));
         assertEquals(400, post("/api/sign", List.of(src, sig), Map.of("x", "2", "y", "0", "width", "0.3")).statusCode());
         assertEquals(400, post("/api/sign", List.of(src), Map.of()).statusCode());
+    }
+
+    @Test
+    void watermarkCropExtractAndUniversalPreview() throws Exception {
+        Path src = pdf(dir, "plan.pdf", "Plan", 2);
+        var wm = post("/api/watermark", List.of(src), Map.of("text", "SIRI", "angle", "0", "layout", "tile"));
+        assertEquals(200, wm.statusCode(), text(wm));
+        assertTrue(pdfText(wm.body()).contains("SIRI"));
+        Path logo = image(dir, "logo.png", photo(60, 30));
+        var wmImage = post("/api/watermark", List.of(src, logo), Map.of("opacity", "0.5"));
+        assertEquals(200, wmImage.statusCode(), text(wmImage));
+        assertEquals(400, post("/api/watermark", List.of(src), Map.of("text", " ")).statusCode());
+        assertEquals(400, post("/api/watermark", List.of(src), Map.of("text", "x", "color", "blue")).statusCode());
+
+        var crop = post("/api/crop", List.of(src), Map.of("mode", "auto"));
+        assertEquals(200, crop.statusCode(), text(crop));
+        var resize = post("/api/crop", List.of(src), Map.of("mode", "resize", "paper", "letter"));
+        assertTrue(resize.headers().firstValue("Content-Disposition").orElseThrow().contains("plan-resized.pdf"));
+        assertEquals(400, post("/api/crop", List.of(src), Map.of("mode", "stretch")).statusCode());
+
+        Path album = dir.resolve("album.pdf");
+        new com.docsmelt.pdf.ImagesToPdf().create(List.of(image(dir, "a.jpg", photo(80, 60)), image(dir, "b.png", photo(70, 50))),
+                album, com.docsmelt.pdf.ImagesToPdf.PageSize.FIT, 0);
+        var images = post("/api/extract-images", List.of(album), Map.of());
+        assertEquals("application/zip", images.headers().firstValue("Content-Type").orElseThrow(), text(images));
+        var none = post("/api/extract-images", List.of(src), Map.of());
+        assertEquals(400, none.statusCode());
+        assertTrue(text(none).contains("No images found"));
+
+        Path docx = dir.resolve("letter.docx");
+        Document d = new Document();
+        d.newPage().add(Paragraph.heading("Barua")).add(Paragraph.body("Habari"));
+        new com.docsmelt.io.docx.DocxDocumentWriter().write(d, docx);
+        var preview = post("/api/preview", List.of(docx), Map.of("page", "1", "width", "300"));
+        assertEquals(200, preview.statusCode(), text(preview));
+        assertTrue(text(preview).startsWith("{\"count\":1,\"page\":1,"), "Word files preview via PDF");
+        assertEquals(400, post("/api/preview", List.of(docx), Map.of()).statusCode(), "page thumbnails stay PDF-only");
     }
 
     @Test

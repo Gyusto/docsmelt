@@ -1,18 +1,76 @@
 "use strict";
 
-/* ---------- API client -------------------------------------------------- */
+/* =========================================================================
+ *  DocSmelt web UI
+ *  - I18n: English / Kiswahili
+ *  - App: home screen with search, hash routing (#tool), theme, install
+ *  - ToolPanel: shared upload → options → run → result flow (template method)
+ *  - PreviewPane: right-hand preview of the input and the result
+ * ========================================================================= */
+
+/* ---------- i18n ---------------------------------------------------------- */
+
+class I18n {
+  constructor(dicts) {
+    this.dicts = dicts;
+    this.listeners = [];
+    let saved = null;
+    try { saved = localStorage.getItem("docsmelt.lang"); } catch { /* storage blocked */ }
+    this.lang = dicts[saved] ? saved
+      : (navigator.language || "").toLowerCase().startsWith("sw") ? "sw" : "en";
+  }
+
+  t(key, vars = {}) {
+    let s = this.dicts[this.lang][key] ?? this.dicts.en[key] ?? key;
+    for (const [k, v] of Object.entries(vars)) s = s.replaceAll(`{${k}}`, String(v));
+    return s;
+  }
+
+  set(lang) {
+    if (!this.dicts[lang]) return;
+    this.lang = lang;
+    try { localStorage.setItem("docsmelt.lang", lang); } catch { /* storage blocked */ }
+    this.apply(document);
+    this.listeners.forEach((f) => f());
+  }
+
+  onChange(f) { this.listeners.push(f); }
+
+  apply(root) {
+    document.documentElement.lang = this.lang;
+    root.querySelectorAll("[data-i18n]").forEach((e) => { e.textContent = this.t(e.dataset.i18n); });
+    root.querySelectorAll("[data-i18n-placeholder]").forEach((e) => { e.placeholder = this.t(e.dataset.i18nPlaceholder); });
+    root.querySelectorAll("[data-i18n-aria]").forEach((e) => {
+      const text = this.t(e.dataset.i18nAria);
+      e.setAttribute("aria-label", text);
+      e.title = text;
+    });
+  }
+
+  /** Server messages are English; translate the common ones. */
+  serverError(message) {
+    if (this.lang !== "sw") return message;
+    for (const [re, sw] of window.DS_SERVER_ERRORS_SW ?? []) {
+      const m = message.match(re);
+      if (m) return sw.replace("$1", m[1] ?? "");
+    }
+    return message;
+  }
+}
+
+const i18n = new I18n(window.DS_I18N);
+const t = (key, vars) => i18n.t(key, vars);
+
+/* ---------- API client ---------------------------------------------------- */
 
 class Api {
   async info() {
     const res = await fetch("api/formats");
-    if (!res.ok) throw new Error("Could not reach the server");
+    if (!res.ok) throw new Error(t("st.server"));
     return res.json();
   }
 
-  /**
-   * POSTs a multipart form with upload progress (fetch can't report that),
-   * resolving to { blob, filename }.
-   */
+  /** POSTs a multipart form with upload progress, resolving to { blob, filename }. */
   send(endpoint, form, onUploadProgress = () => {}) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -20,15 +78,15 @@ class Api {
       xhr.responseType = "blob";
       xhr.upload.onprogress = (e) => e.lengthComputable && onUploadProgress(e.loaded / e.total);
       xhr.upload.onload = () => onUploadProgress(1);
-      xhr.onerror = () => reject(new Error("Network error — is the server still running?"));
+      xhr.onerror = () => reject(new Error(t("st.network")));
       xhr.onload = async () => {
         if (xhr.status === 200) {
           resolve({ blob: xhr.response, filename: Api.filename(xhr.getResponseHeader("Content-Disposition")) });
           return;
         }
-        let message = `Request failed (${xhr.status})`;
+        let message = t("st.failed", { code: xhr.status });
         try { message = JSON.parse(await xhr.response.text()).error || message; } catch { /* not JSON */ }
-        reject(new Error(message));
+        reject(new Error(i18n.serverError(message)));
       };
       xhr.send(form);
     });
@@ -43,7 +101,7 @@ class Api {
   }
 }
 
-/* ---------- Helpers ----------------------------------------------------- */
+/* ---------- Helpers ------------------------------------------------------- */
 
 const el = (tag, props = {}, ...children) => {
   const node = Object.assign(document.createElement(tag), props);
@@ -53,6 +111,8 @@ const el = (tag, props = {}, ...children) => {
 
 const ext = (name) => (name.includes(".") ? name.split(".").pop().toLowerCase() : "");
 const IMAGE_EXTS = ["png", "jpg", "jpeg", "bmp", "gif"];
+const OFFICE_EXTS = ["docx", "xlsx", "xls", "pptx", "txt"];
+const PREVIEWABLE = ["pdf", ...OFFICE_EXTS];
 
 const icon = (name, extra = "") => {
   const i = el("i", { className: `fa-solid fa-${name} ${extra}`.trim() });
@@ -65,6 +125,7 @@ const FILE_ICONS = {
   png: ["file-image", "image"], jpg: ["file-image", "image"], jpeg: ["file-image", "image"],
   bmp: ["file-image", "image"], gif: ["file-image", "image"],
   xlsx: ["file-excel", "excel"], xls: ["file-excel", "excel"], pptx: ["file-powerpoint", "powerpoint"],
+  zip: ["file-zipper", "other"],
 };
 const fileIcon = (name) => {
   const [glyph, kind] = FILE_ICONS[ext(name)] ?? ["file", "other"];
@@ -72,8 +133,7 @@ const fileIcon = (name) => {
 };
 
 const iconButton = (glyph, label, onclick, { disabled = false, extra = "" } = {}) => {
-  const b = el("button", { className: `icon-btn ${extra}`.trim(), type: "button", title: label, disabled, onclick },
-    icon(glyph));
+  const b = el("button", { className: `icon-btn ${extra}`.trim(), type: "button", title: label, disabled, onclick }, icon(glyph));
   b.setAttribute("aria-label", label);
   return b;
 };
@@ -83,19 +143,29 @@ const formatSize = (bytes) =>
     : bytes < 1024 ** 2 ? `${(bytes / 1024).toFixed(0)} KB`
       : `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 
-/* ---------- File list --------------------------------------------------- */
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+/* ---------- File list ----------------------------------------------------- */
 
 class FileList {
-  constructor(listEl, { single = false, sortable = false, onChange }) {
+  constructor(listEl, { single = false, sortable = false, onChange, onPreview }) {
     this.listEl = listEl;
     this.single = single;
     this.sortable = sortable;
     this.onChange = onChange;
+    this.onPreview = onPreview;
     this.files = [];
+    this.previewing = null;
+    i18n.onChange(() => this.render(false));
   }
 
   add(newFiles) {
     this.files = this.single ? newFiles.slice(0, 1) : [...this.files, ...newFiles];
+    this.render();
+  }
+
+  clear() {
+    this.files = [];
     this.render();
   }
 
@@ -111,29 +181,36 @@ class FileList {
     this.listEl.children[index + delta]?.querySelector(delta < 0 ? "[data-up]" : "[data-down]")?.focus();
   }
 
-  render() {
+  markPreview(file) {
+    this.previewing = file;
+    [...this.listEl.children].forEach((li, i) => li.classList.toggle("previewing", this.files[i] === file));
+  }
+
+  render(notify = true) {
     this.listEl.replaceChildren(...this.files.map((file, i) => {
       const buttons = [];
       if (this.sortable) {
-        const up = iconButton("arrow-up", `Move ${file.name} up`, () => this.move(i, -1), { disabled: i === 0 });
-        const down = iconButton("arrow-down", `Move ${file.name} down`, () => this.move(i, 1),
+        const up = iconButton("arrow-up", t("file.up", { name: file.name }), () => this.move(i, -1), { disabled: i === 0 });
+        const down = iconButton("arrow-down", t("file.down", { name: file.name }), () => this.move(i, 1),
           { disabled: i === this.files.length - 1 });
         up.dataset.up = "";
         down.dataset.down = "";
         buttons.push(up, down);
       }
-      buttons.push(iconButton("xmark", `Remove ${file.name}`, () => this.remove(i), { extra: "remove" }));
-      return el("li", {},
-        fileIcon(file.name),
-        el("span", { className: "name", textContent: file.name, title: file.name }),
-        el("span", { className: "size", textContent: formatSize(file.size) }),
-        ...buttons);
+      buttons.push(iconButton("xmark", t("file.remove", { name: file.name }), () => this.remove(i), { extra: "remove" }));
+      const name = el("button", { type: "button", className: "file-name", textContent: file.name, title: file.name,
+        onclick: () => this.onPreview?.(file) });
+      name.setAttribute("aria-label", t("file.preview", { name: file.name }));
+      const li = el("li", {}, fileIcon(file.name), name,
+        el("span", { className: "size", textContent: formatSize(file.size) }), ...buttons);
+      li.classList.toggle("previewing", file === this.previewing && this.files.length > 1);
+      return li;
     }));
-    this.onChange();
+    if (notify) this.onChange();
   }
 }
 
-/* ---------- Status box -------------------------------------------------- */
+/* ---------- Status box ---------------------------------------------------- */
 
 class Status {
   constructor(node) { this.node = node; this.url = null; }
@@ -145,7 +222,8 @@ class Status {
     this.set("busy", "spinner", "fa-spin", this.label, this.track);
   }
 
-  progress(fraction, processingText = "Processing…") {
+  progress(fraction, processingText = t("st.processing")) {
+    if (!this.label) return;
     if (fraction >= 1) {
       this.label.textContent = processingText;
       this.track.classList.add("indeterminate");
@@ -160,13 +238,14 @@ class Status {
     this.url = URL.createObjectURL(blob);
     const link = el("a", { href: this.url, download: filename }, icon("download"), ` ${filename}`);
     this.set("done", "circle-check", "",
-      el("span", {}, `${summary ?? `Done (${formatSize(blob.size)}).`} Download: `, link));
+      el("span", {}, `${summary ?? t("st.done", { size: formatSize(blob.size) })} ${t("st.download")} `, link));
     link.click(); // start the download automatically
   }
 
   error(message) { this.set("error", "circle-exclamation", "", el("span", { textContent: message })); }
 
   clear() {
+    this.label = null;
     this.node.className = "status";
     this.node.replaceChildren();
   }
@@ -177,58 +256,219 @@ class Status {
   }
 }
 
-/* ---------- Tool panels (template method) ------------------------------- */
+/* ---------- Preview pane -------------------------------------------------- */
+
+/**
+ * Shows the chosen file (and, after a run, the result) page by page.
+ * Images display directly; PDFs and Office files are rendered by the server.
+ */
+class PreviewPane {
+  constructor(root, api) {
+    this.root = root;
+    this.api = api;
+    this.img = root.querySelector(".pv-img");
+    this.msg = root.querySelector(".pv-msg");
+    this.empty = root.querySelector(".pv-empty");
+    this.loading = root.querySelector(".pv-loading");
+    this.pager = root.querySelector(".pv-pager");
+    this.countEl = root.querySelector(".pv-count");
+    this.nameEl = root.querySelector(".pv-name");
+    this.switchEl = root.querySelector(".pv-switch");
+    this.items = { before: null, after: null };
+    this.which = "before";
+    this.page = 1;
+    this.total = 1;
+    this.token = 0;
+    this.cache = new WeakMap();   // file → Map(page → {src, total})
+    this.urls = new WeakMap();    // image file → object URL
+    this.switchEl.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+      this.which = b.dataset.which;
+      this.page = 1;
+      this.render();
+    }));
+    root.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => {
+      this.page = clamp(this.page + Number(b.dataset.step), 1, this.total);
+      this.render();
+    }));
+    i18n.onChange(() => this.render());
+  }
+
+  show(file) {
+    this.items = { before: file, after: null };
+    this.which = "before";
+    this.page = 1;
+    this.render();
+  }
+
+  showResult(file) {
+    this.items.after = file;
+    this.which = "after";
+    this.page = 1;
+    this.render();
+  }
+
+  width() {
+    return clamp(Math.round((this.root.clientWidth || 500) * (window.devicePixelRatio || 1)), 300, 1000);
+  }
+
+  async render() {
+    const item = this.items[this.which];
+    const both = !!(this.items.before && this.items.after);
+    this.switchEl.hidden = !both;
+    this.switchEl.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.which === this.which)));
+    this.img.hidden = this.msg.hidden = this.pager.hidden = this.loading.hidden = true;
+    this.nameEl.textContent = item?.name ?? "";
+    this.empty.hidden = !!item;
+    if (!item) return;
+
+    const e = ext(item.name);
+    if (e === "zip") return this.message(t("pv.zip"));
+    if (IMAGE_EXTS.includes(e)) {
+      if (!this.urls.has(item)) this.urls.set(item, URL.createObjectURL(item));
+      this.total = 1;
+      this.img.src = this.urls.get(item);
+      this.img.hidden = false;
+      return;
+    }
+    if (!PREVIEWABLE.includes(e)) return this.message(t("pv.none"));
+
+    const token = ++this.token;
+    if (!this.cache.has(item)) this.cache.set(item, new Map());
+    const pages = this.cache.get(item);
+    let entry = pages.get(this.page);
+    if (!entry) {
+      this.loading.hidden = false;
+      try {
+        const form = new FormData();
+        form.append("files", item, item.name);
+        form.append("page", String(this.page));
+        form.append("width", String(this.width()));
+        const { blob } = await this.api.send("api/preview", form);
+        const data = JSON.parse(await blob.text());
+        entry = { src: data.pages[0].src, total: data.count };
+        pages.set(this.page, entry);
+      } catch (err) {
+        if (token === this.token) {
+          this.loading.hidden = true;
+          this.message(err.message, true);
+        }
+        return;
+      }
+      if (token !== this.token) return; // the user moved on meanwhile
+      this.loading.hidden = true;
+    }
+    this.total = entry.total;
+    this.img.src = entry.src;
+    this.img.hidden = false;
+    this.pager.hidden = this.total <= 1;
+    this.countEl.textContent = t("pv.page", { n: this.page, total: this.total });
+    const [prev, next] = this.pager.querySelectorAll("[data-step]");
+    prev.disabled = this.page <= 1;
+    next.disabled = this.page >= this.total;
+  }
+
+  message(text, isError = false) {
+    this.msg.textContent = text;
+    this.msg.classList.toggle("error", isError);
+    this.msg.hidden = false;
+  }
+}
+
+/* ---------- What can follow what ------------------------------------------ */
+
+const NEXT_STEPS = {
+  pdf: ["compress", "sign", "protect", "number", "watermark", "organize", "split", "crop", "merge", "extract", "ocr", "convert"],
+  image: ["images", "ocr", "convert"],
+  office: ["convert", "merge"],
+};
+
+/* ---------- Tool panels (template method) --------------------------------- */
 
 class ToolPanel {
-  constructor(section, api, info, { single = false, sortable = false, minFiles = 1, accept } = {}) {
+  constructor(tool, section, ctx, { single = false, sortable = false, minFiles = 1 } = {}) {
+    this.tool = tool;
+    this.id = tool.id;
     this.section = section;
-    this.api = api;
-    this.info = info;
+    this.api = ctx.api;
+    this.info = ctx.info;
+    this.app = ctx.app;
     this.minFiles = minFiles;
     this.button = section.querySelector("[data-action]");
     this.status = new Status(section.querySelector(".status"));
-    this.files = new FileList(section.querySelector(".files"), { single, sortable, onChange: () => this.filesChanged() });
-    if (accept) section.querySelector("input[type=file]").accept = accept;
+    this.nextEl = section.querySelector(".next-steps");
+    this.files = new FileList(section.querySelector(".files"), {
+      single, sortable, onChange: () => this.filesChanged(), onPreview: (f) => this.previewFile(f),
+    });
+    const pane = section.querySelector(".pv-body") ? section.querySelector(".preview-pane") : null;
+    this.preview = pane ? new PreviewPane(pane, this.api) : null;
     this.wireDropzone(section.querySelector(".dropzone"));
     this.button.addEventListener("click", () => this.submit());
+    i18n.onChange(() => this.renderNext());
     this.refresh();
   }
 
   /* Subclasses override these. */
   endpoint() { throw new Error("abstract"); }
-  busyText() { return "Uploading…"; }
-  processingText() { return "Processing…"; }
+  busyText() { return this.files.files.length > 1 ? t("st.uploadingN", { n: this.files.files.length }) : t("st.uploading"); }
+  processingText() { return t("st.processing"); }
   fillForm(_form) {}
   async prepare() {}
   validate() { return null; }
   summary(_result) { return null; }
-  filesChanged() { this.refresh(); }
   ready() { return this.files.files.length >= this.minFiles; }
+  nextTools(file) {
+    const e = ext(file.name);
+    const kind = e === "pdf" ? "pdf" : IMAGE_EXTS.includes(e) ? "image" : OFFICE_EXTS.includes(e) ? "office" : null;
+    return (NEXT_STEPS[kind] ?? []).filter((id) => id !== this.id);
+  }
 
-  field(name) { return this.section.querySelector(`[name=${name}]`); }
+  field(name) { return this.section.querySelector(`[name="${name}"]`); }
 
-  requireExt(allowed, message) {
-    return this.files.files.every((f) => allowed.includes(ext(f.name))) ? null : message;
+  requireExt(allowed, key) {
+    return this.files.files.every((f) => allowed.includes(ext(f.name))) ? null : t(key);
+  }
+
+  filesChanged() {
+    this.hideNext();
+    const first = this.files.files[0] ?? null;
+    this.preview?.show(first);
+    this.files.markPreview(first);
+    this.refresh();
+  }
+
+  previewFile(file) {
+    this.preview?.show(file);
+    this.files.markPreview(file);
+  }
+
+  /** Files handed over from another tool ("continue with this file"). */
+  receive(files) {
+    this.status.clear();
+    this.files.files = [];
+    this.accept(files);
   }
 
   wireDropzone(zone) {
     this.zone = zone;
     const input = zone.querySelector("input[type=file]");
     input.addEventListener("change", () => { this.accept([...input.files]); input.value = ""; });
-    ["dragenter", "dragover"].forEach((t) => zone.addEventListener(t, (e) => {
+    ["dragenter", "dragover"].forEach((type) => zone.addEventListener(type, (e) => {
       e.preventDefault(); zone.classList.add("dragging");
     }));
-    ["dragleave", "drop"].forEach((t) => zone.addEventListener(t, (e) => {
+    ["dragleave", "drop"].forEach((type) => zone.addEventListener(type, (e) => {
       e.preventDefault(); zone.classList.remove("dragging");
     }));
-    zone.addEventListener("drop", (e) => this.accept([...e.dataTransfer.files]));
+    zone.addEventListener("drop", (e) => {
+      e.stopPropagation(); // the page-wide drop handler would add them again
+      this.accept([...e.dataTransfer.files]);
+    });
   }
 
   accept(files) {
     const max = this.info.maxUploadMb * 1024 * 1024;
     const tooBig = files.filter((f) => f.size > max);
     const ok = files.filter((f) => f.size <= max);
-    if (tooBig.length) this.status.error(`${tooBig.map((f) => f.name).join(", ")}: larger than ${this.info.maxUploadMb} MB`);
+    if (tooBig.length) this.status.error(t("st.tooBig", { names: tooBig.map((f) => f.name).join(", "), mb: this.info.maxUploadMb }));
     else this.status.clear();
     if (ok.length) this.files.add(ok);
   }
@@ -239,11 +479,12 @@ class ToolPanel {
 
   async submit() {
     const problem = this.validate()
-      ?? (this.files.files.length > this.info.maxFiles ? `At most ${this.info.maxFiles} files at once` : null);
+      ?? (this.files.files.length > this.info.maxFiles ? t("st.tooMany", { n: this.info.maxFiles }) : null);
     if (problem) { this.status.error(problem); return; }
 
     this.busy = true;
     this.refresh();
+    this.hideNext();
     this.status.busy(this.busyText());
     try {
       await this.prepare();
@@ -252,6 +493,7 @@ class ToolPanel {
       this.fillForm(form);
       const result = await this.api.send(this.endpoint(), form, (p) => this.status.progress(p, this.processingText()));
       this.status.done(result, this.summary(result));
+      this.onResult(result);
     } catch (err) {
       this.status.error(err.message);
     } finally {
@@ -259,35 +501,64 @@ class ToolPanel {
       this.refresh();
     }
   }
+
+  onResult({ blob, filename }) {
+    const file = new File([blob], filename, { type: blob.type });
+    this.preview?.showResult(file);
+    this.nextFile = file;
+    this.renderNext();
+  }
+
+  renderNext() {
+    const file = this.nextFile;
+    const ids = file ? this.nextTools(file).filter((id) => this.app.panels[id]) : [];
+    this.nextEl.hidden = !ids.length;
+    if (!ids.length) return;
+    const tools = this.app.tools;
+    this.nextEl.replaceChildren(
+      el("p", { textContent: t("next.title") }),
+      el("div", {}, ...ids.slice(0, 8).map((id) => el("button", {
+        type: "button", className: "chip", onclick: () => this.app.open(id, [file]),
+      }, icon(tools[id].icon), t(`tool.${id}.name`)))));
+  }
+
+  hideNext() {
+    this.nextFile = null;
+    this.nextEl.hidden = true;
+  }
 }
 
 class ConvertPanel extends ToolPanel {
-  constructor(section, api, info) {
-    super(section, api, info, { accept: info.read.map((e) => `.${e}`).join(",") });
+  constructor(tool, section, ctx) {
+    super(tool, section, ctx);
     this.select = this.field("to");
-    const names = { pdf: "PDF", docx: "Word (.docx)", xlsx: "Excel (.xlsx)", pptx: "PowerPoint (.pptx)",
-      txt: "Text (.txt)", png: "PNG image", jpg: "JPEG image", bmp: "BMP image", gif: "GIF image" };
-    info.write.filter((f) => f !== "jpeg").forEach((f) =>
-      this.select.append(el("option", { value: f, textContent: names[f] ?? f.toUpperCase() })));
+    this.formats = ctx.info.write.filter((f) => f !== "jpeg");
     this.userPicked = false;
     this.select.addEventListener("change", () => { this.userPicked = true; });
+    this.renderOptions();
+    i18n.onChange(() => this.renderOptions());
+  }
+
+  renderOptions() {
+    const value = this.select.value;
+    this.select.replaceChildren(...this.formats.map((f) => el("option", { value: f, textContent: t(`fmt.${f}`) })));
+    if (value) this.select.value = value;
   }
 
   /** Pick a sensible target until the user chooses one themselves. */
   filesChanged() {
     super.filesChanged();
-    if (this.userPicked || !this.files.files.length) return;
+    if (!this.select || this.userPicked || !this.files.files.length) return;
     const kinds = new Set(this.files.files.map((f) => ext(f.name)));
     this.select.value = kinds.size === 1 && kinds.has("pdf") ? "docx" : "pdf";
   }
 
   endpoint() { return "api/convert"; }
-  busyText() { return `Uploading ${this.files.files.length} file(s)…`; }
 
   validate() {
     const target = this.select.value;
     const same = this.files.files.filter((f) => ext(f.name) === target || (target === "jpg" && ext(f.name) === "jpeg"));
-    return same.length === this.files.files.length ? `Your file(s) are already ${target.toUpperCase()}` : null;
+    return same.length === this.files.files.length ? t("v.already", { fmt: target.toUpperCase() }) : null;
   }
 
   fillForm(form) {
@@ -300,29 +571,22 @@ class ConvertPanel extends ToolPanel {
 }
 
 class MergePanel extends ToolPanel {
-  constructor(section, api, info) {
-    super(section, api, info, { sortable: true, minFiles: 2, accept: info.read.map((e) => `.${e}`).join(",") });
-  }
+  constructor(tool, section, ctx) { super(tool, section, ctx, { sortable: true, minFiles: 2 }); }
   endpoint() { return "api/merge"; }
-  busyText() { return `Uploading ${this.files.files.length} files…`; }
 }
 
 class SplitPanel extends ToolPanel {
-  constructor(section, api, info) {
-    super(section, api, info, { single: true });
-    // Typing in a field selects its radio button.
+  constructor(tool, section, ctx) {
+    super(tool, section, ctx, { single: true });
     this.field("every").addEventListener("focus", () => { section.querySelector("[value=every]").checked = true; });
     this.field("ranges").addEventListener("focus", () => { section.querySelector("[value=ranges]").checked = true; });
   }
   endpoint() { return "api/split"; }
-
   mode() { return this.section.querySelector("[name=mode]:checked").value; }
 
   validate() {
-    if (ext(this.files.files[0].name) !== "pdf") return "Please choose a PDF file";
-    if (this.mode() === "ranges" && !this.field("ranges").value.trim()) {
-      return "Enter page ranges, e.g. 1-3,4-9,10-";
-    }
+    if (ext(this.files.files[0].name) !== "pdf") return t("v.pdfOnly");
+    if (this.mode() === "ranges" && !this.field("ranges").value.trim()) return t("v.ranges");
     return null;
   }
 
@@ -333,32 +597,25 @@ class SplitPanel extends ToolPanel {
 }
 
 class CompressPanel extends ToolPanel {
-  constructor(section, api, info) { super(section, api, info); }
   endpoint() { return "api/compress"; }
-  busyText() { return `Uploading ${this.files.files.length} PDF(s)…`; }
-  processingText() { return "Compressing…"; }
-  validate() { return this.requireExt(["pdf"], "Only PDF files can be compressed"); }
-
-  fillForm(form) {
-    form.append("level", this.section.querySelector("[name=level]:checked").value);
-  }
+  processingText() { return t("b.compress"); }
+  validate() { return this.requireExt(["pdf"], "v.pdfOnly"); }
+  fillForm(form) { form.append("level", this.section.querySelector("[name=level]:checked").value); }
 
   summary({ blob }) {
     const before = this.files.files.reduce((sum, f) => sum + f.size, 0);
-    if (this.files.files.length > 1) return `Compressed ${this.files.files.length} files.`;
-    const saved = Math.round((1 - blob.size / before) * 100);
-    return saved > 0
-      ? `${formatSize(before)} → ${formatSize(blob.size)} (${saved}% smaller).`
-      : `This PDF was already compact (${formatSize(before)}).`;
+    if (this.files.files.length > 1) return t("r.compressedN", { n: this.files.files.length });
+    const pct = Math.round((1 - blob.size / before) * 100);
+    return pct > 0
+      ? t("r.compressed", { before: formatSize(before), after: formatSize(blob.size), pct })
+      : t("r.compact", { size: formatSize(before) });
   }
 }
 
 class ImagesPanel extends ToolPanel {
-  constructor(section, api, info) { super(section, api, info, { sortable: true }); }
+  constructor(tool, section, ctx) { super(tool, section, ctx, { sortable: true }); }
   endpoint() { return "api/images-to-pdf"; }
-  busyText() { return `Uploading ${this.files.files.length} image(s)…`; }
-  validate() { return this.requireExt(IMAGE_EXTS, "Only images can be added (JPG, PNG, BMP, GIF)"); }
-
+  validate() { return this.requireExt(IMAGE_EXTS, "v.imagesOnly"); }
   fillForm(form) {
     form.append("pageSize", this.field("pageSize").value);
     form.append("margin", this.field("margin").value);
@@ -366,19 +623,12 @@ class ImagesPanel extends ToolPanel {
 }
 
 class OcrPanel extends ToolPanel {
-  constructor(section, api, info) {
-    super(section, api, info, { single: true });
-    const ocr = info.ocr ?? { available: false, languages: [] };
-    const names = { eng: "English", swa: "Swahili", fra: "French", deu: "German", spa: "Spanish",
-      por: "Portuguese", ara: "Arabic", ita: "Italian", nld: "Dutch", hin: "Hindi" };
-    const select = this.field("lang");
-    ocr.languages.forEach((l) => select.append(el("option", { value: l, textContent: names[l] ?? l })));
-    if (ocr.languages.includes("eng") && ocr.languages.includes("swa")) {
-      select.append(el("option", { value: "eng+swa", textContent: "English + Swahili" }));
-    }
-    select.value = ocr.languages.includes("eng") ? "eng" : ocr.languages[0] ?? "";
-    this.maxPages = ocr.maxPages;
-    if (!ocr.available) {
+  constructor(tool, section, ctx) {
+    super(tool, section, ctx, { single: true });
+    this.ocr = ctx.info.ocr ?? { available: false, languages: [] };
+    this.renderLangs();
+    i18n.onChange(() => this.renderLangs());
+    if (!this.ocr.available) {
       this.disabled = true;
       section.querySelector(".notice").hidden = false;
       this.zone.hidden = true;
@@ -386,10 +636,19 @@ class OcrPanel extends ToolPanel {
     }
   }
 
+  renderLangs() {
+    const select = this.field("lang");
+    const value = select.value;
+    const langs = [...this.ocr.languages];
+    const options = langs.map((l) => el("option", { value: l, textContent: t(`ln.${l}`) === `ln.${l}` ? l : t(`ln.${l}`) }));
+    if (langs.includes("eng") && langs.includes("swa")) options.push(el("option", { value: "eng+swa", textContent: t("ln.engswa") }));
+    select.replaceChildren(...options);
+    select.value = value || (i18n.lang === "sw" && langs.includes("swa") ? "swa" : langs.includes("eng") ? "eng" : langs[0] ?? "");
+  }
+
   endpoint() { return "api/ocr"; }
-  busyText() { return "Uploading…"; }
-  processingText() { return "Recognizing text… this takes a few seconds per page"; }
-  validate() { return this.requireExt(["pdf", ...IMAGE_EXTS], "OCR works on PDFs and images"); }
+  processingText() { return t("b.ocr"); }
+  validate() { return this.requireExt(["pdf", ...IMAGE_EXTS], "v.ocrTypes"); }
 
   fillForm(form) {
     form.append("lang", this.field("lang").value);
@@ -399,14 +658,174 @@ class OcrPanel extends ToolPanel {
   }
 }
 
+class CropPanel extends ToolPanel {
+  constructor(tool, section, ctx) {
+    super(tool, section, ctx, { single: true });
+    section.querySelectorAll("[name=cropMode]").forEach((r) => r.addEventListener("change", () => this.applyMode()));
+    this.applyMode();
+  }
+  mode() { return this.section.querySelector("[name=cropMode]:checked").value; }
+  applyMode() {
+    this.section.querySelectorAll("[data-crop]").forEach((e) => { e.hidden = e.dataset.crop !== this.mode(); });
+  }
+  endpoint() { return "api/crop"; }
+  validate() { return this.requireExt(["pdf"], "v.pdfOnly"); }
+  fillForm(form) {
+    form.append("mode", this.mode());
+    form.append("margin", this.field("margin").value);
+    form.append("paper", this.field("paper").value);
+  }
+}
+
+class ExtractPanel extends ToolPanel {
+  constructor(tool, section, ctx) { super(tool, section, ctx, { single: true }); }
+  endpoint() { return "api/extract-images"; }
+  validate() { return this.requireExt(["pdf"], "v.pdfOnly"); }
+  fillForm(form) {
+    const pages = this.field("pages").value.trim();
+    if (pages) form.append("pages", pages);
+  }
+}
+
+class WatermarkPanel extends ToolPanel {
+  constructor(tool, section, ctx) {
+    super(tool, section, ctx, { single: true });
+    this.textInput = this.field("wmText");
+    this.textInput.value = t("wm.textDefault");
+    this.defaultText = this.textInput.value;
+    i18n.onChange(() => {
+      if (this.textInput.value === this.defaultText) this.textInput.value = t("wm.textDefault");
+      this.defaultText = t("wm.textDefault");
+    });
+    section.querySelectorAll("[name=wmKind]").forEach((r) => r.addEventListener("change", () => this.applyKind()));
+    this.field("wmFile").addEventListener("change", (e) => { this.image = e.target.files[0] ?? null; });
+    const range = this.field("opacity");
+    const out = range.parentElement.querySelector("output");
+    range.addEventListener("input", () => { out.textContent = `${range.value}%`; });
+    this.applyKind();
+  }
+  kind() { return this.section.querySelector("[name=wmKind]:checked").value; }
+  applyKind() {
+    this.section.querySelectorAll("[data-wm]").forEach((e) => { e.hidden = e.dataset.wm !== this.kind(); });
+  }
+  endpoint() { return "api/watermark"; }
+  validate() {
+    const pdf = this.requireExt(["pdf"], "v.pdfOnly");
+    if (pdf) return pdf;
+    if (this.kind() === "text" && !this.textInput.value.trim()) return t("v.wmText");
+    if (this.kind() === "image" && !this.image) return t("v.wmImage");
+    return null;
+  }
+  fillForm(form) {
+    if (this.kind() === "image") {
+      form.append("files", this.image, this.image.name);
+    } else {
+      form.append("text", this.textInput.value.trim());
+      form.append("color", this.field("color").value);
+    }
+    form.append("opacity", String(Number(this.field("opacity").value) / 100));
+    form.append("angle", this.field("angle").value);
+    form.append("layout", this.field("layout").value);
+    const pages = this.field("wmPages").value;
+    if (pages) form.append("pages", pages);
+  }
+}
+
+class NumberPanel extends ToolPanel {
+  constructor(tool, section, ctx) {
+    super(tool, section, ctx, { single: true });
+    this.renderFormats();
+    i18n.onChange(() => this.renderFormats());
+  }
+
+  renderFormats() {
+    const select = this.field("format");
+    const index = Math.max(0, select.selectedIndex);
+    const formats = ["{n}", t("nm.fmtPage"), t("nm.fmtPageOf"), "{n} / {total}", "- {n} -"];
+    select.replaceChildren(...formats.map((f) => el("option", {
+      value: f, textContent: f.replace("{n}", "1").replace("{total}", "10"),
+    })));
+    select.selectedIndex = index;
+  }
+
+  endpoint() { return "api/number"; }
+  validate() { return this.requireExt(["pdf"], "v.pdfOnly"); }
+  fillForm(form) {
+    form.append("position", this.section.querySelector("[name=position]:checked").value);
+    ["format", "size", "start"].forEach((n) => form.append(n, this.field(n).value));
+    if (this.field("skipFirst").checked) form.append("pages", "2-");
+  }
+}
+
+class ProtectPanel extends ToolPanel {
+  constructor(tool, section, ctx) {
+    super(tool, section, ctx, { single: true });
+    section.querySelectorAll("[name=secMode]").forEach((r) => r.addEventListener("change", () => this.applyMode()));
+    this.reveal = section.querySelector("[data-reveal]");
+    this.reveal.addEventListener("click", () => {
+      this.shown = !this.shown;
+      ["password", "confirm"].forEach((n) => { this.field(n).type = this.shown ? "text" : "password"; });
+      this.labelReveal();
+    });
+    i18n.onChange(() => { this.labelReveal(); this.applyMode(); });
+    this.labelReveal();
+    this.applyMode();
+  }
+
+  labelReveal() {
+    this.reveal.replaceChildren(icon(this.shown ? "eye-slash" : "eye"));
+    const label = t(this.shown ? "pr.hide" : "pr.show");
+    this.reveal.setAttribute("aria-label", label);
+    this.reveal.title = label;
+  }
+
+  mode() { return this.section.querySelector("[name=secMode]:checked").value; }
+
+  applyMode() {
+    const protect = this.mode() === "protect";
+    this.section.querySelectorAll("[data-protect-only]").forEach((e) => { e.hidden = !protect; });
+    this.section.querySelector("[data-label]").textContent = protect ? t("tool.protect.action") : t("pr.remove");
+    this.field("password").autocomplete = protect ? "new-password" : "current-password";
+  }
+
+  endpoint() { return this.mode() === "protect" ? "api/protect" : "api/unlock"; }
+  processingText() { return this.mode() === "protect" ? t("b.encrypt") : t("b.unlock"); }
+
+  validate() {
+    const pdf = this.requireExt(["pdf"], "v.pdfOnly");
+    if (pdf) return pdf;
+    const pw = this.field("password").value;
+    if (pw.length < 4) return t("v.pwShort");
+    if (this.mode() === "protect" && pw !== this.field("confirm").value) return t("v.pwMatch");
+    return null;
+  }
+
+  fillForm(form) {
+    form.append("password", this.field("password").value);
+    if (this.mode() === "protect") {
+      ["allowPrint", "allowCopy", "allowEdit"].forEach((n) => form.append(n, String(this.field(n).checked)));
+    }
+  }
+
+  summary() {
+    const protect = this.mode() === "protect";
+    ["password", "confirm"].forEach((n) => { this.field(n).value = ""; }); // don't leave it on screen
+    return protect ? t("r.protected") : t("r.unlocked");
+  }
+
+  /** An encrypted result can't be processed further; an unlocked one can. */
+  nextTools(file) { return this.mode() === "protect" ? [] : super.nextTools(file); }
+}
+
 /**
- * Organize: loads page thumbnails for one PDF, lets the user rotate, delete
- * and reorder them, then sends the resulting order + rotations.
+ * Organize: loads page thumbnails for one PDF into the right-hand panel,
+ * lets the user rotate, delete and reorder them, then sends order + rotations.
  */
 class OrganizePanel extends ToolPanel {
-  constructor(section, api, info) {
-    super(section, api, info, { single: true, accept: ".pdf,application/pdf" });
+  constructor(tool, section, ctx) {
+    super(tool, section, ctx, { single: true });
     this.grid = section.querySelector(".page-grid");
+    this.sideEmpty = section.querySelector(".side-empty");
     this.toolbar = section.querySelector(".pages-toolbar");
     this.hint = section.querySelector(".pages-hint");
     this.countEl = section.querySelector(".page-count");
@@ -416,16 +835,13 @@ class OrganizePanel extends ToolPanel {
     section.querySelectorAll("[data-rotate-all]").forEach((b) =>
       b.addEventListener("click", () => this.rotateAll(Number(b.dataset.rotateAll))));
     section.querySelector("[data-reset]").addEventListener("click", () => this.reset());
+    i18n.onChange(() => this.render());
   }
 
   endpoint() { return "api/organize"; }
-  processingText() { return "Saving…"; }
+  processingText() { return t("b.save"); }
   ready() { return (this.pages?.length ?? 0) > 0; } // runs once before the constructor finishes
-
-  validate() {
-    if (!this.pages.length) return "Every page was removed. Use Reset to start over.";
-    return null;
-  }
+  validate() { return this.pages.length ? null : t("v.allRemoved"); }
 
   fillForm(form) {
     form.append("order", this.pages.map((p) => p.orig).join(","));
@@ -433,20 +849,22 @@ class OrganizePanel extends ToolPanel {
   }
 
   async filesChanged() {
+    this.hideNext();
     const token = ++this.loadToken;
     this.pages = [];
     this.original = [];
     this.render();
     const file = this.files.files[0];
     if (!file) return;
-    if (ext(file.name) !== "pdf") { this.status.error("Please choose a PDF file"); return; }
+    if (ext(file.name) !== "pdf") { this.status.error(t("v.pdfOnly")); return; }
 
     const form = new FormData();
     form.append("files", file, file.name);
-    this.status.busy("Loading pages…");
-    this.grid.replaceChildren(...Array.from({ length: 4 }, () => this.skeletonCard()));
+    this.status.busy(t("b.loadPages"));
+    this.sideEmpty.hidden = true;
+    this.grid.replaceChildren(...Array.from({ length: 6 }, () => this.skeletonCard()));
     try {
-      const { blob } = await this.api.send("api/preview", form, (p) => this.status.progress(p, "Rendering pages…"));
+      const { blob } = await this.api.send("api/preview", form, (p) => this.status.progress(p, t("b.renderPages")));
       if (token !== this.loadToken) return; // a newer file was chosen meanwhile
       const data = JSON.parse(await blob.text());
       this.original = data.pages.map((p, i) => ({ orig: i + 1, src: p.src, base: p.rotation, rotation: 0 }));
@@ -455,6 +873,7 @@ class OrganizePanel extends ToolPanel {
     } catch (err) {
       if (token !== this.loadToken) return;
       this.grid.replaceChildren();
+      this.render();
       this.status.error(err.message);
     }
   }
@@ -483,36 +902,37 @@ class OrganizePanel extends ToolPanel {
   }
 
   render() {
+    if (!this.grid) return;
     const removed = this.original.length - this.pages.length;
-    this.toolbar.hidden = this.hint.hidden = !this.original.length;
-    this.countEl.textContent = this.original.length
-      ? `${this.pages.length} page${this.pages.length === 1 ? "" : "s"}${removed ? ` (${removed} removed)` : ""}`
-      : "";
-    this.grid.replaceChildren(...this.pages.map((p, i) => this.card(p, i)));
+    const loaded = this.original.length > 0;
+    this.toolbar.hidden = this.hint.hidden = !loaded;
+    this.sideEmpty.hidden = loaded || this.grid.querySelector(".loading") !== null;
+    this.countEl.textContent = loaded ? t("org.count", { n: this.pages.length }) + (removed ? t("org.removed", { n: removed }) : "") : "";
+    if (loaded || !this.grid.querySelector(".loading")) {
+      this.grid.replaceChildren(...this.pages.map((p, i) => this.card(p, i)));
+    }
     this.refresh();
   }
 
   card(page, index) {
     const angle = page.base + page.rotation;
     const sideways = angle % 180 !== 0;
-    const img = el("img", { src: page.src, alt: `Page ${page.orig}`, draggable: false });
+    const img = el("img", { src: page.src, alt: `${page.orig}`, draggable: false });
     img.style.transform = `rotate(${angle}deg)${sideways ? " scale(.72)" : ""}`;
-
-    const label = `page ${page.orig}`;
+    const n = page.orig;
     const li = el("li", { className: "page-card", draggable: true },
       el("div", { className: "page-thumb" }, img),
       el("div", { className: "page-meta" },
-        el("span", { className: "page-num", textContent: String(page.orig) }),
-        iconButton("trash-can", `Delete ${label}`, () => { this.pages.splice(index, 1); this.render(); }, { extra: "remove" })),
+        el("span", { className: "page-num", textContent: String(n) }),
+        iconButton("trash-can", t("org.delete", { n }), () => { this.pages.splice(index, 1); this.render(); }, { extra: "remove" })),
       el("div", { className: "page-meta" },
-        iconButton("chevron-left", `Move ${label} earlier`, () => this.move(index, index - 1), { disabled: index === 0 }),
+        iconButton("chevron-left", t("org.earlier", { n }), () => this.move(index, index - 1), { disabled: index === 0 }),
         el("span", { className: "page-actions" },
-          iconButton("rotate-left", `Rotate ${label} left`, () => { page.rotation = (page.rotation + 270) % 360; this.render(); }),
-          iconButton("rotate-right", `Rotate ${label} right`, () => { page.rotation = (page.rotation + 90) % 360; this.render(); })),
-        iconButton("chevron-right", `Move ${label} later`, () => this.move(index, index + 1),
+          iconButton("rotate-left", t("org.rotL", { n }), () => { page.rotation = (page.rotation + 270) % 360; this.render(); }),
+          iconButton("rotate-right", t("org.rotR", { n }), () => { page.rotation = (page.rotation + 90) % 360; this.render(); })),
+        iconButton("chevron-right", t("org.later", { n }), () => this.move(index, index + 1),
           { disabled: index === this.pages.length - 1 })));
 
-    // Drag and drop reordering.
     li.addEventListener("dragstart", (e) => {
       this.dragFrom = index;
       e.dataTransfer.effectAllowed = "move";
@@ -530,7 +950,7 @@ class OrganizePanel extends ToolPanel {
     li.addEventListener("dragleave", () => li.classList.remove("drop-before", "drop-after"));
     li.addEventListener("drop", (e) => {
       e.preventDefault();
-      e.stopPropagation(); // don't let the drop reach the file dropzone logic
+      e.stopPropagation();
       const after = li.classList.contains("drop-after");
       const from = this.dragFrom;
       this.dragFrom = undefined;
@@ -540,68 +960,6 @@ class OrganizePanel extends ToolPanel {
       this.move(from, to);
     });
     return li;
-  }
-}
-
-class ProtectPanel extends ToolPanel {
-  constructor(section, api, info) {
-    super(section, api, info, { single: true, accept: ".pdf,application/pdf" });
-    section.querySelectorAll("[name=secMode]").forEach((r) => r.addEventListener("change", () => this.applyMode()));
-    const reveal = section.querySelector("[data-reveal]");
-    reveal.addEventListener("click", () => {
-      const show = this.field("password").type === "password";
-      ["password", "confirm"].forEach((n) => { this.field(n).type = show ? "text" : "password"; });
-      reveal.replaceChildren(icon(show ? "eye-slash" : "eye"));
-      reveal.setAttribute("aria-label", show ? "Hide password" : "Show password");
-    });
-    this.applyMode();
-  }
-
-  mode() { return this.section.querySelector("[name=secMode]:checked").value; }
-
-  applyMode() {
-    const protect = this.mode() === "protect";
-    this.section.querySelectorAll("[data-protect-only]").forEach((e) => { e.hidden = !protect; });
-    this.section.querySelector("[data-label]").textContent = protect ? "Protect PDF" : "Remove password";
-    this.field("password").autocomplete = protect ? "new-password" : "current-password";
-    this.status.clear();
-  }
-
-  endpoint() { return this.mode() === "protect" ? "api/protect" : "api/unlock"; }
-  processingText() { return this.mode() === "protect" ? "Encrypting…" : "Unlocking…"; }
-
-  validate() {
-    const pdf = this.requireExt(["pdf"], "Please choose a PDF file");
-    if (pdf) return pdf;
-    const pw = this.field("password").value;
-    if (pw.length < 4) return "The password must be at least 4 characters";
-    if (this.mode() === "protect" && pw !== this.field("confirm").value) return "The passwords don't match";
-    return null;
-  }
-
-  fillForm(form) {
-    form.append("password", this.field("password").value);
-    if (this.mode() === "protect") {
-      ["allowPrint", "allowCopy", "allowEdit"].forEach((n) => form.append(n, String(this.field(n).checked)));
-    }
-  }
-
-  summary() {
-    const protect = this.mode() === "protect";
-    ["password", "confirm"].forEach((n) => { this.field(n).value = ""; }); // don't leave it on screen
-    return protect ? "Protected with AES-256." : "Password removed.";
-  }
-}
-
-class NumberPanel extends ToolPanel {
-  constructor(section, api, info) { super(section, api, info, { single: true, accept: ".pdf,application/pdf" }); }
-  endpoint() { return "api/number"; }
-  validate() { return this.requireExt(["pdf"], "Please choose a PDF file"); }
-
-  fillForm(form) {
-    form.append("position", this.section.querySelector("[name=position]:checked").value);
-    ["format", "size", "start"].forEach((n) => form.append(n, this.field(n).value));
-    if (this.field("skipFirst").checked) form.append("pages", "2-");
   }
 }
 
@@ -693,13 +1051,15 @@ function trimCanvas(source) {
 }
 
 class SignPanel extends ToolPanel {
-  constructor(section, api, info) {
-    super(section, api, info, { single: true, accept: ".pdf,application/pdf" });
+  constructor(tool, section, ctx) {
+    super(tool, section, ctx, { single: true });
     this.place = section.querySelector(".sign-place");
+    this.sideEmpty = section.querySelector(".side-empty");
     this.stage = section.querySelector(".sign-stage");
     this.pageImg = section.querySelector(".sign-page-img");
     this.box = section.querySelector(".sig-box");
-    this.preview = section.querySelector(".sig-preview");
+    this.sigPreview = section.querySelector(".sig-preview");
+    this.pageRow = section.querySelector(".sign-page-row");
     this.pageSelect = this.field("signPage");
     this.pos = { x: 0.55, y: 0.8, w: 0.3 };
     this.aspect = 1 / 3;
@@ -717,16 +1077,17 @@ class SignPanel extends ToolPanel {
     this.pageSelect.addEventListener("change", () => this.loadPage(Number(this.pageSelect.value)));
     this.wireBox();
     new ResizeObserver(() => this.layoutBox()).observe(this.stage);
+    i18n.onChange(() => this.renderPageOptions());
   }
 
   sigMode() { return this.section.querySelector("[name=sigMode]:checked").value; }
   endpoint() { return "api/sign"; }
-  processingText() { return "Signing…"; }
+  processingText() { return t("b.sign"); }
   ready() { return (this.files?.files.length ?? 0) === 1 && !!this.pageLoaded && !!this.sigCanvas; }
 
   validate() {
-    if (!this.sigCanvas) return "Add your signature first";
-    if (!this.pageLoaded) return "Wait for the page to load";
+    if (!this.sigCanvas) return t("v.sigMissing");
+    if (!this.pageLoaded) return t("v.pageLoading");
     return null;
   }
 
@@ -769,7 +1130,7 @@ class SignPanel extends ToolPanel {
   async loadUploaded(file) {
     if (!file) return;
     try {
-      const bitmap = await createImageBitmap(file);
+      const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
       const scale = Math.min(1, 1500 / Math.max(bitmap.width, bitmap.height));
       const c = el("canvas", { width: Math.round(bitmap.width * scale), height: Math.round(bitmap.height * scale) });
       const g = c.getContext("2d", { willReadFrequently: true });
@@ -777,14 +1138,13 @@ class SignPanel extends ToolPanel {
       // Make a white/paper background transparent, so photographed signatures sit on the page.
       const img = g.getImageData(0, 0, c.width, c.height);
       for (let i = 0; i < img.data.length; i += 4) {
-        const [r, gr, b] = [img.data[i], img.data[i + 1], img.data[i + 2]];
-        if (r > 225 && gr > 225 && b > 225) img.data[i + 3] = 0;
+        if (img.data[i] > 225 && img.data[i + 1] > 225 && img.data[i + 2] > 225) img.data[i + 3] = 0;
       }
       g.putImageData(img, 0, 0);
       this.uploaded = trimCanvas(c) ?? c;
     } catch {
       this.uploaded = null;
-      this.status.error("Couldn't read that image");
+      this.status.error(t("sg.readErr"));
     }
     this.updateSignature();
   }
@@ -794,10 +1154,10 @@ class SignPanel extends ToolPanel {
     this.sigCanvas = c;
     if (c) {
       this.aspect = c.height / c.width;
-      this.preview.src = c.toDataURL("image/png");
+      this.sigPreview.src = c.toDataURL("image/png");
     } else {
       this.aspect = 1 / 3;
-      this.preview.removeAttribute("src");
+      this.sigPreview.removeAttribute("src");
     }
     this.box.classList.toggle("has-sig", !!c);
     this.layoutBox();
@@ -807,14 +1167,25 @@ class SignPanel extends ToolPanel {
   /* --- page preview --- */
 
   async filesChanged() {
+    this.hideNext();
     this.pageLoaded = false;
     this.place.hidden = true;
+    this.pageRow.hidden = true;
+    this.sideEmpty.hidden = false;
     this.refresh();
     const file = this.files.files[0];
     if (!file) return;
-    if (ext(file.name) !== "pdf") { this.status.error("Please choose a PDF file"); return; }
-    this.pageSelect.replaceChildren();
+    if (ext(file.name) !== "pdf") { this.status.error(t("v.pdfOnly")); return; }
+    this.count = 0;
     await this.loadPage(0); // last page: where signatures usually go
+  }
+
+  renderPageOptions() {
+    if (!this.count) return;
+    const value = this.pageSelect.value;
+    this.pageSelect.replaceChildren(...Array.from({ length: this.count }, (_, i) =>
+      el("option", { value: String(i + 1), textContent: t("pv.page", { n: i + 1, total: this.count }) })));
+    this.pageSelect.value = value || String(this.page);
   }
 
   async loadPage(page) {
@@ -823,21 +1194,23 @@ class SignPanel extends ToolPanel {
     const form = new FormData();
     form.append("files", file, file.name);
     form.append("page", String(page));
-    form.append("width", String(Math.min(1100, Math.round(520 * (window.devicePixelRatio || 1)))));
-    this.status.busy("Loading page…");
+    form.append("width", String(Math.min(1100, Math.round(560 * (window.devicePixelRatio || 1)))));
+    this.status.busy(t("b.loadPage"));
     try {
-      const { blob } = await this.api.send("api/preview", form, (p) => this.status.progress(p, "Rendering page…"));
+      const { blob } = await this.api.send("api/preview", form, (p) => this.status.progress(p, t("b.renderPages")));
       if (token !== this.loadToken) return;
       const data = JSON.parse(await blob.text());
-      if (this.pageSelect.options.length !== data.count) {
-        this.pageSelect.replaceChildren(...Array.from({ length: data.count }, (_, i) =>
-          el("option", { value: String(i + 1), textContent: `Page ${i + 1} of ${data.count}` })));
+      this.page = data.page;
+      if (this.count !== data.count) {
+        this.count = data.count;
+        this.renderPageOptions();
       }
       this.pageSelect.value = String(data.page);
-      this.page = data.page;
       this.pageImg.src = data.pages[0].src;
       await this.pageImg.decode().catch(() => {});
       this.place.hidden = false;
+      this.pageRow.hidden = false;
+      this.sideEmpty.hidden = true;
       this.pageLoaded = true;
       this.status.clear();
       this.layoutBox();
@@ -855,10 +1228,10 @@ class SignPanel extends ToolPanel {
     if (!W || !H) return;
     const p = this.pos;
     const maxW = Math.min(1, (H / W) / this.aspect); // the box must fit vertically too
-    p.w = Math.min(Math.max(p.w, 0.05), maxW);
+    p.w = clamp(p.w, 0.05, maxW);
     const hFrac = (p.w * W * this.aspect) / H;
-    p.x = Math.min(Math.max(p.x, 0), 1 - p.w);
-    p.y = Math.min(Math.max(p.y, 0), 1 - hFrac);
+    p.x = clamp(p.x, 0, 1 - p.w);
+    p.y = clamp(p.y, 0, 1 - hFrac);
     Object.assign(this.box.style, {
       left: `${p.x * W}px`, top: `${p.y * H}px`, width: `${p.w * W}px`, height: `${hFrac * H}px`,
     });
@@ -889,10 +1262,10 @@ class SignPanel extends ToolPanel {
     const end = () => { drag = null; };
     this.box.addEventListener("pointerdown", (e) => start(e, "move"));
     handle.addEventListener("pointerdown", (e) => start(e, "resize"));
-    [this.box, handle].forEach((t) => {
-      t.addEventListener("pointermove", move);
-      t.addEventListener("pointerup", end);
-      t.addEventListener("pointercancel", end);
+    [this.box, handle].forEach((target) => {
+      target.addEventListener("pointermove", move);
+      target.addEventListener("pointerup", end);
+      target.addEventListener("pointercancel", end);
     });
     this.box.addEventListener("keydown", (e) => {
       const step = e.shiftKey ? 0.05 : 0.01;
@@ -913,50 +1286,268 @@ class SignPanel extends ToolPanel {
   }
 }
 
-/* ---------- Tabs ------------------------------------------------------------ */
+/* ---------- Tool registry ---------------------------------------------------- */
 
-class Tabs {
-  constructor(tablist) {
-    this.tabs = [...tablist.querySelectorAll("[role=tab]")];
-    this.tabs.forEach((tab, i) => {
-      tab.addEventListener("click", () => this.select(i));
-      tab.addEventListener("keydown", (e) => {
-        const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
-        if (step) { e.preventDefault(); this.select((i + step + this.tabs.length) % this.tabs.length, true); }
-      });
-    });
-    const fromHash = this.tabs.findIndex((t) => `#${t.id.replace("tab-", "")}` === location.hash);
-    this.select(Math.max(0, fromHash));
+const PDF_ONLY = ".pdf,application/pdf";
+const IMAGES = ".jpg,.jpeg,.png,.bmp,.gif,image/*";
+
+/**
+ * Every tool, once. The home screen, search, tool pages and "continue with
+ * this file" suggestions are all built from this list.
+ */
+const TOOLS = [
+  { id: "convert", group: "convert", icon: "right-left", color: "blue", Panel: ConvertPanel, multiple: true,
+    accept: (info) => info.read.map((e) => `.${e}`).join(","), action: "wand-magic-sparkles",
+    keywords: "convert change word excel powerpoint pdf to docx xlsx pptx jpg png txt badilisha geuza" },
+  { id: "images", group: "convert", icon: "images", color: "blue", Panel: ImagesPanel, multiple: true, accept: () => IMAGES,
+    action: "file-pdf", keywords: "jpg png photo picture scan image to pdf picha" },
+  { id: "ocr", group: "convert", icon: "spell-check", color: "blue", Panel: OcrPanel, accept: () => `${PDF_ONLY},${IMAGES}`,
+    action: "spell-check", keywords: "ocr text recognize scan searchable read soma maandishi tambua" },
+  { id: "merge", group: "organize", icon: "layer-group", color: "teal", Panel: MergePanel, multiple: true,
+    accept: (info) => info.read.map((e) => `.${e}`).join(","), action: "layer-group",
+    keywords: "merge combine join append unganisha" },
+  { id: "split", group: "organize", icon: "scissors", color: "teal", Panel: SplitPanel, accept: () => PDF_ONLY,
+    action: "scissors", keywords: "split separate extract pages divide gawanya tenganisha" },
+  { id: "organize", group: "organize", icon: "table-cells-large", color: "teal", Panel: OrganizePanel, accept: () => PDF_ONLY,
+    action: "floppy-disk", side: "organize", keywords: "organize rotate delete reorder sort pages move panga zungusha futa" },
+  { id: "crop", group: "organize", icon: "crop-simple", color: "teal", Panel: CropPanel, accept: () => PDF_ONLY,
+    action: "crop-simple", keywords: "crop trim margin resize paper a4 letter size kata pambizo" },
+  { id: "extract", group: "organize", icon: "file-image", color: "teal", Panel: ExtractPanel, accept: () => PDF_ONLY,
+    action: "file-export", keywords: "extract images pictures photos save toa picha" },
+  { id: "compress", group: "edit", icon: "file-zipper", color: "amber", Panel: CompressPanel, multiple: true, accept: () => PDF_ONLY,
+    action: "file-zipper", keywords: "compress shrink reduce smaller size email optimize punguza ndogo" },
+  { id: "watermark", group: "edit", icon: "stamp", color: "amber", Panel: WatermarkPanel, accept: () => PDF_ONLY,
+    action: "stamp", keywords: "watermark stamp confidential draft logo brand alama maji nembo" },
+  { id: "number", group: "edit", icon: "list-ol", color: "amber", Panel: NumberPanel, accept: () => PDF_ONLY,
+    action: "list-ol", keywords: "page numbers numbering footer header namba kurasa" },
+  { id: "protect", group: "secure", icon: "lock", color: "purple", Panel: ProtectPanel, accept: () => PDF_ONLY,
+    action: "lock", keywords: "protect password encrypt lock unlock remove security linda nenosiri fungua" },
+  { id: "sign", group: "secure", icon: "signature", color: "purple", Panel: SignPanel, accept: () => PDF_ONLY,
+    action: "file-signature", side: "sign", keywords: "sign signature autograph esign saini sahihi" },
+];
+const GROUPS = ["convert", "organize", "edit", "secure"];
+
+/* ---------- App: home, routing, theme, language, install --------------------- */
+
+class App {
+  constructor(api, info) {
+    this.api = api;
+    this.info = info;
+    this.tools = Object.fromEntries(TOOLS.map((tool) => [tool.id, tool]));
+    this.panels = {};
+    this.main = document.getElementById("main");
+    this.home = document.getElementById("view-home");
+    this.search = document.getElementById("tool-search");
+
+    for (const tool of TOOLS) {
+      const section = this.buildSection(tool);
+      this.main.append(section);
+      i18n.apply(section);
+      this.panels[tool.id] = new tool.Panel(tool, section, { api, info, app: this });
+    }
+    this.renderHome();
+    this.wireSearch();
+    this.wireTheme();
+    this.wireLanguage();
+    this.wireInstall();
+    this.wireGlobalDrop();
+    i18n.onChange(() => { this.renderHome(); this.updateTitle(); this.renderLimits(); });
+    this.renderLimits();
+    window.addEventListener("hashchange", () => this.route());
+    this.route();
   }
 
-  select(index, focus = false) {
-    this.tabs.forEach((tab, i) => {
-      const on = i === index;
-      tab.setAttribute("aria-selected", String(on));
-      tab.tabIndex = on ? 0 : -1;
-      document.getElementById(tab.getAttribute("aria-controls")).hidden = !on;
-      if (on) tab.scrollIntoView({ block: "nearest", inline: "nearest" });
-      if (on && focus) tab.focus();
+  buildSection(tool) {
+    const section = el("section", { className: "view tool", id: `view-${tool.id}`, hidden: true });
+    section.dataset.tool = tool.id;
+    section.innerHTML = `
+      <div class="tool-head">
+        <a class="back" href="#"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> <span data-i18n="nav.allTools"></span></a>
+        <div class="tool-title">
+          <span class="tool-icon c-${tool.color}"><i class="fa-solid fa-${tool.icon}" aria-hidden="true"></i></span>
+          <div><h1 tabindex="-1" data-i18n="tool.${tool.id}.name"></h1><p data-i18n="tool.${tool.id}.desc"></p></div>
+        </div>
+      </div>
+      <div class="workspace">
+        <div class="card controls">
+          <label class="dropzone">
+            <input type="file" class="visually-hidden">
+            <i class="fa-solid fa-cloud-arrow-up dz-icon" aria-hidden="true"></i>
+            <span class="dz-title"><span data-i18n="tool.${tool.id}.drop"></span> <u data-i18n="dz.browse"></u></span>
+            <span class="dz-hint" data-i18n="tool.${tool.id}.hint"></span>
+          </label>
+          <ul class="files" aria-live="polite"></ul>
+          <div class="opts"></div>
+          <button class="primary" data-action><i class="fa-solid fa-${tool.action}" aria-hidden="true"></i> <span data-label data-i18n="tool.${tool.id}.action"></span></button>
+          <div class="status" role="status"></div>
+          <div class="next-steps" hidden></div>
+        </div>
+        <aside class="card preview-pane"></aside>
+      </div>`;
+    const input = section.querySelector(".dropzone input");
+    input.multiple = !!tool.multiple;
+    input.accept = tool.accept(this.info);
+    const opts = document.getElementById(`opts-${tool.id}`);
+    if (opts) section.querySelector(".opts").append(opts.content.cloneNode(true));
+    const side = document.getElementById(`side-${tool.side ?? "preview"}`);
+    section.querySelector(".preview-pane").append(side.content.cloneNode(true));
+    return section;
+  }
+
+  renderHome() {
+    const container = document.getElementById("tool-groups");
+    container.replaceChildren(...GROUPS.map((group) => el("section", { className: "tool-group" },
+      el("h2", { textContent: t(`group.${group}`) }),
+      el("div", { className: "tool-cards" }, ...TOOLS.filter((tool) => tool.group === group).map((tool) => {
+        const card = el("a", { className: "tool-card", href: `#${tool.id}` },
+          el("span", { className: `tool-icon c-${tool.color}` }, icon(tool.icon)),
+          el("span", {}, el("b", { textContent: t(`tool.${tool.id}.name`) }), el("small", { textContent: t(`tool.${tool.id}.desc`) })));
+        card.dataset.search = [t(`tool.${tool.id}.name`), t(`tool.${tool.id}.desc`), tool.keywords,
+          i18n.dicts.en[`tool.${tool.id}.name`], i18n.dicts.sw[`tool.${tool.id}.name`]].join(" ").toLowerCase();
+        return card;
+      })))));
+    this.filter();
+  }
+
+  wireSearch() {
+    this.search.addEventListener("input", () => this.filter());
+    this.search.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        const first = this.home.querySelector(".tool-card:not([hidden])");
+        if (first) location.hash = first.getAttribute("href");
+      } else if (e.key === "Escape") {
+        this.search.value = "";
+        this.filter();
+      }
     });
-    history.replaceState(null, "", `#${this.tabs[index].id.replace("tab-", "")}`);
+    document.addEventListener("keydown", (e) => {
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
+      if (e.key === "/" && !typing && !this.home.hidden) {
+        e.preventDefault();
+        this.search.focus();
+      }
+    });
+  }
+
+  filter() {
+    const words = this.search.value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    let shown = 0;
+    this.home.querySelectorAll(".tool-card").forEach((card) => {
+      const match = words.every((w) => card.dataset.search.includes(w));
+      card.hidden = !match;
+      if (match) shown++;
+    });
+    this.home.querySelectorAll(".tool-group").forEach((g) => { g.hidden = !g.querySelector(".tool-card:not([hidden])"); });
+    const empty = document.getElementById("search-empty");
+    empty.hidden = shown > 0;
+    empty.textContent = t("search.none", { q: this.search.value.trim() });
+  }
+
+  route() {
+    const id = location.hash.slice(1);
+    const current = this.panels[id] ? id : null;
+    this.home.hidden = !!current;
+    this.main.querySelectorAll(".view.tool").forEach((v) => { v.hidden = v.dataset.tool !== current; });
+    this.current = current;
+    this.updateTitle();
+    window.scrollTo(0, 0);
+    if (current) document.querySelector(`#view-${current} h1`).focus({ preventScroll: true });
+  }
+
+  updateTitle() {
+    document.title = this.current ? `${t(`tool.${this.current}.name`)} · DocSmelt` : "DocSmelt";
+  }
+
+  /** Opens a tool, optionally with files already loaded (continue with result / drop on home). */
+  open(id, files) {
+    if (location.hash !== `#${id}`) location.hash = id;
+    else this.route();
+    if (files?.length) this.panels[id].receive(files);
+  }
+
+  renderLimits() {
+    document.getElementById("limits").textContent = t("foot.limits", { files: this.info.maxFiles, mb: this.info.maxUploadMb });
+  }
+
+  wireTheme() {
+    const button = document.getElementById("theme-btn");
+    let theme = "light";
+    try { theme = localStorage.getItem("docsmelt.theme") || "light"; } catch { /* storage blocked */ }
+    const apply = () => {
+      document.documentElement.dataset.theme = theme;
+      button.replaceChildren(icon(theme === "dark" ? "sun" : "moon"));
+      const label = t(theme === "dark" ? "theme.toLight" : "theme.toDark");
+      button.setAttribute("aria-label", label);
+      button.title = label;
+      document.querySelector('meta[name="theme-color"]').content = theme === "dark" ? "#1c2230" : "#6aa8ff";
+    };
+    button.addEventListener("click", () => {
+      theme = theme === "dark" ? "light" : "dark";
+      try { localStorage.setItem("docsmelt.theme", theme); } catch { /* storage blocked */ }
+      apply();
+    });
+    i18n.onChange(apply);
+    apply();
+  }
+
+  wireLanguage() {
+    const buttons = document.querySelectorAll("[data-lang]");
+    const mark = () => buttons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.lang === i18n.lang)));
+    buttons.forEach((b) => b.addEventListener("click", () => i18n.set(b.dataset.lang)));
+    i18n.onChange(mark);
+    mark();
+  }
+
+  wireInstall() {
+    const button = document.getElementById("install-btn");
+    let prompt = null;
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      prompt = e;
+      button.hidden = false;
+    });
+    button.addEventListener("click", async () => {
+      if (!prompt) return;
+      prompt.prompt();
+      await prompt.userChoice.catch(() => {});
+      prompt = null;
+      button.hidden = true;
+    });
+    window.addEventListener("appinstalled", () => { button.hidden = true; });
+    if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+      navigator.serviceWorker.register("sw.js").catch(() => { /* offline support is optional */ });
+    }
+  }
+
+  /** Files dropped anywhere: into the open tool, or into Convert from the home screen. */
+  wireGlobalDrop() {
+    let depth = 0;
+    const isFiles = (e) => [...(e.dataTransfer?.types ?? [])].includes("Files");
+    window.addEventListener("dragenter", (e) => { if (isFiles(e)) { depth++; document.body.classList.add("dragging-file"); } });
+    window.addEventListener("dragleave", (e) => { if (isFiles(e) && --depth <= 0) { depth = 0; document.body.classList.remove("dragging-file"); } });
+    window.addEventListener("dragover", (e) => { if (isFiles(e)) e.preventDefault(); });
+    window.addEventListener("drop", (e) => {
+      depth = 0;
+      document.body.classList.remove("dragging-file");
+      if (!isFiles(e)) return;
+      e.preventDefault(); // never let the browser navigate away to the file
+      const files = [...e.dataTransfer.files];
+      if (!files.length) return;
+      if (this.current) this.panels[this.current].accept(files);
+      else this.open("convert", files);
+    });
   }
 }
 
-/* ---------- Boot ------------------------------------------------------------ */
+/* ---------- Boot -------------------------------------------------------------- */
 
 (async () => {
-  new Tabs(document.querySelector("[role=tablist]"));
-  const api = new Api();
+  i18n.apply(document);
   try {
-    const info = await api.info();
-    const panels = {
-      convert: ConvertPanel, merge: MergePanel, split: SplitPanel, organize: OrganizePanel,
-      compress: CompressPanel, images: ImagesPanel, ocr: OcrPanel,
-      protect: ProtectPanel, number: NumberPanel, sign: SignPanel,
-    };
-    Object.entries(panels).forEach(([id, Panel]) => new Panel(document.getElementById(`panel-${id}`), api, info));
-    document.getElementById("limits").textContent = `Up to ${info.maxFiles} files, ${info.maxUploadMb} MB each.`;
+    const info = await new Api().info();
+    window.docsmelt = new App(new Api(), info);
   } catch (err) {
-    document.querySelectorAll(".status").forEach((s) => new Status(s).error(err.message));
+    document.getElementById("search-empty").hidden = false;
+    document.getElementById("search-empty").textContent = err.message;
   }
 })();

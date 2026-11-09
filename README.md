@@ -6,50 +6,61 @@
 </h1>
 
 <p align="center">
-  Convert, merge, split, organize, compress, OCR, protect, number and sign<br>
-  PDF, Word, Excel, PowerPoint and image files,<br>
-  from a web page, the command line or Docker.<br>
-  Object-oriented Java 21. Self-hosted: files never leave your server.
+  Every PDF and document tool in one place: convert, merge, split, organize, crop, compress,<br>
+  watermark, number, protect, sign and OCR PDF, Word, Excel, PowerPoint and image files.<br>
+  Self-hosted (files never leave your server), in English and Kiswahili.
 </p>
 
 <p align="center">
-  <img src="docs/images/convert.png" alt="DocSmelt web UI converting an Excel file, a PowerPoint deck and a Word file to PDF" width="560">
+  <img src="docs/images/home.png" alt="DocSmelt home screen with tool groups and search" width="760">
 </p>
 
 ## Features
 
-- **Convert** between `pdf`, `docx`, `xlsx`, `pptx`, `txt`, `png`, `jpg/jpeg`, `bmp` and `gif` (plus reading legacy `xls`), one file or whole folders
-- **Excel**: sheets become real tables (bordered, header repeated on each page, landscape when wide); tables from Word become real Excel cells with numbers kept as numbers
-- **PowerPoint**: slides become PDF pages or images that look like the slides; documents and PDFs become slides
-- **Merge** any mix of PDFs, Word files, text and images into one PDF
-- **Split** a PDF every N pages or by custom ranges
-- **Organize** pages visually: rotate, delete and drag to reorder
-- **Compress** PDFs by shrinking their images (a 13.5 MB scan became 621 KB in testing)
-- **Images to PDF**: photos or scans, one per page; JPEGs keep their original quality
+**Convert**
+- **Convert** between `pdf`, `docx`, `xlsx`, `pptx`, `txt`, `png`, `jpg`, `bmp` and `gif` (plus reading legacy `xls`), one file or whole folders
+- **Images to PDF**: photos and scans, one per page; phone photos are turned upright automatically
 - **OCR** with Tesseract: scans and photos become searchable PDFs, Word or text (English, Swahili, French in Docker)
-- **Protect**: add an AES-256 password (optionally blocking printing or copying), or remove a password you know
-- **Page numbers**: six positions, styles like "Page 1 of 10", skip the cover, any start number
-- **Sign**: draw, type or upload a signature and drag it into place on the page
-- **Unicode PDFs**: Latin, Greek, Cyrillic built in; Chinese, Japanese, Korean via a fallback font
-- **Web UI** with drag and drop, plus a REST API, a CLI and a Docker image
+
+**Organize**
+- **Merge** any mix of PDFs, Word, Excel, text and images into one PDF
+- **Split** by page count or custom ranges
+- **Organize pages** visually: rotate, delete, drag to reorder
+- **Crop & resize**: trim white margins automatically, cut a fixed margin, or fit pages to A4/Letter/A3/A5/Legal
+- **Extract images** from a PDF (JPEGs byte-for-byte, others as PNG)
+
+**Edit & optimize**
+- **Compress** PDFs by shrinking their images (a 13.5 MB scan became 621 KB in testing)
+- **Watermark** with text or a logo: centred at any angle or tiled, with opacity and colour
+- **Page numbers**: six positions, styles like "Page 1 of 10", skip the cover
+
+**Protect & sign**
+- **Protect** with an AES-256 password (optionally blocking printing or copying), or remove a password you know
+- **Sign**: draw, type or upload a signature and drag it into place
+
+**Web interface**
+- Home screen with all tools grouped, plus search (in both languages; press <kbd>/</kbd>)
+- **Live preview** on the right: the file you dropped and the result, page by page, with an Original/Result switch
+- **Continue with this file**: send a result straight to the next tool (e.g. Merge → Compress → Protect) without re-uploading
+- **English / Kiswahili**, **soft dark mode**, and **installable as an app** on phones and desktops (PWA)
+- Drop files anywhere on the page
 
 <table>
   <tr>
-    <td align="center"><img src="docs/images/organize.png" alt="Organizing PDF pages as thumbnails with rotate and delete buttons" width="260"><br><b>Organize</b>: rotate, delete, drag</td>
-    <td align="center"><img src="docs/images/compress.png" alt="Compressing a 13.5 MB PDF to 621 KB" width="260"><br><b>Compress</b>: 13.5 MB → 621 KB</td>
-    <td align="center"><img src="docs/images/ocr.png" alt="OCR of a scanned invoice into Word" width="260"><br><b>OCR</b>: scans to text</td>
+    <td align="center"><img src="docs/images/convert.png" alt="Converting an Excel file with the result previewed on the right" width="400"><br><b>Convert</b> with live preview</td>
+    <td align="center"><img src="docs/images/watermark.png" alt="Watermarking a PDF with the result previewed" width="400"><br><b>Watermark</b> + continue with the result</td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/images/merge.png" alt="Merging three files with reorder arrows" width="260"><br><b>Merge</b>: reorder, then combine</td>
-    <td align="center"><img src="docs/images/split.png" alt="Splitting a PDF by page ranges" width="260"><br><b>Split</b>: every N pages or ranges</td>
-    <td align="center"><img src="docs/images/mobile.png" alt="DocSmelt on a phone" width="170"><br><b>Mobile</b>-friendly</td>
+    <td align="center"><img src="docs/images/organize.png" alt="Organizing pages as thumbnails" width="400"><br><b>Organize pages</b>: rotate, delete, drag</td>
+    <td align="center"><img src="docs/images/sign.png" alt="Placing a typed signature on a page" width="400"><br><b>Sign</b>: draw, type or upload</td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/images/sign.png" alt="Placing a typed signature on a PDF page" width="200"><br><b>Sign</b>: draw, type or upload</td>
-    <td align="center"><img src="docs/images/protect.png" alt="Adding a password with copy blocked" width="260"><br><b>Protect</b>: AES-256 password</td>
-    <td align="center"><img src="docs/images/number.png" alt="Choosing page number position and style" width="260"><br><b>Page numbers</b></td>
+    <td align="center"><img src="docs/images/ocr.png" alt="OCR of a scanned invoice into Word" width="400"><br><b>OCR</b>: scans to Word, text or searchable PDF</td>
+    <td align="center"><img src="docs/images/dark-swahili.png" alt="Compress tool in Kiswahili with dark mode" width="400"><br><b>Kiswahili</b> and dark mode</td>
   </tr>
 </table>
+
+<p align="center"><img src="docs/images/mobile.png" alt="DocSmelt on a phone" width="220"><br>Works on phones too</p>
 
 ## Usage
 
@@ -105,6 +116,18 @@ docsmelt number thesis.pdf -o numbered.pdf --format "Page {n} of {total}" --posi
 # Sign (visual signature; position as fractions of the page, default bottom right of the last page)
 docsmelt sign contract.pdf --signature sig.png -o signed.pdf --page 2 --x 0.6 --y 0.8 --width 0.3
 
+# Watermark (text or image; center or tile)
+docsmelt watermark report.pdf -o draft.pdf --text DRAFT --layout tile --opacity 0.15
+docsmelt watermark report.pdf -o branded.pdf --image logo.png --angle 0 --size 0.3
+
+# Crop & resize
+docsmelt crop scan.pdf -o trimmed.pdf                 # trim white margins automatically
+docsmelt crop scan.pdf -o trimmed.pdf --margin 10     # cut 10 mm from every side
+docsmelt crop letter.pdf -o a4.pdf --resize a4
+
+# Extract images
+docsmelt extract-images brochure.pdf -o images/
+
 docsmelt --help          # and: docsmelt <command> --help
 ```
 
@@ -131,9 +154,11 @@ docsmelt serve                    # http://127.0.0.1:8080 (this computer only)
 docsmelt serve --host 0.0.0.0     # reachable from your network
 ```
 
-A single page with ten tools (Convert, Merge, Split, Organize, Compress,
-Images to PDF, OCR, Protect, Page numbers, Sign), drag and drop, and upload
-progress. Passwords are never logged. Icons come from Font Awesome, served from the jar (no CDN).
+A home screen with 13 tools in four groups and search, a page per tool with a
+live preview on the right, "continue with this file" between tools, English and
+Kiswahili, light and soft dark themes, and install-as-app support (manifest +
+service worker; the service worker caches only the interface, never files).
+Passwords are never logged. Icons come from Font Awesome, served from the jar (no CDN).
 Uploads are processed in a private temp folder that is deleted as soon as the
 response is sent.
 
@@ -148,7 +173,7 @@ API (multipart/form-data, field `files`):
 | `POST /api/convert` | `files` (1+), `to`, `pages?`, `dpi?`, `quality?` | the file, or a `.zip` if several |
 | `POST /api/merge` | `files` (2+, in order) | `merged.pdf` |
 | `POST /api/split` | `files` (1 PDF), `every?` or `ranges?` | a `.zip` of the parts |
-| `POST /api/preview` | `files` (1 PDF) | JSON page thumbnails |
+| `POST /api/preview` | `files` (1 file), `page?`, `width?` | JSON page thumbnails (PDF), or one page of any format with `page` |
 | `POST /api/organize` | `files` (1 PDF), `order` (`3,1,2`), `rotate?` (`1:90,3:270`) | `<name>-organized.pdf` |
 | `POST /api/compress` | `files` (PDFs), `level?` (`low`/`medium`/`high`) | `<name>-compressed.pdf`, or a `.zip` |
 | `POST /api/images-to-pdf` | `files` (images, in order), `pageSize?`, `margin?` (`none`/`small`/`normal`) | one PDF |
@@ -157,6 +182,9 @@ API (multipart/form-data, field `files`):
 | `POST /api/unlock` | `files` (1 PDF), `password` | `<name>-unlocked.pdf` |
 | `POST /api/number` | `files` (1 PDF), `position?`, `format?`, `start?`, `pages?`, `size?` | `<name>-numbered.pdf` |
 | `POST /api/sign` | `files` (PDF + signature image), `page?` (0 = last), `x`, `y`, `width` (fractions) | `<name>-signed.pdf` |
+| `POST /api/watermark` | `files` (PDF + optional image), `text?`, `color?`, `opacity?`, `angle?`, `size?`, `layout?` (`center`/`tile`), `pages?` | `<name>-watermarked.pdf` |
+| `POST /api/crop` | `files` (1 PDF), `mode` (`auto`/`margin`/`resize`), `margin?` (mm), `paper?` | `<name>-cropped.pdf` / `-resized.pdf` |
+| `POST /api/extract-images` | `files` (1 PDF), `pages?` | the image, or `<name>-images.zip` |
 | `GET /api/formats` | | formats, limits and OCR languages as JSON |
 
 Errors are JSON: `{"error": "..."}` with status 400, 429 or 503.
@@ -191,10 +219,11 @@ Reader ──► Document (pages → blocks) ──► Writer
 | `io.pdf`, `io.docx`, `io.office`, `io.image`, `io.text` | Adapters over Apache PDFBox, Apache POI (Word, Excel, PowerPoint) and ImageIO. `FontChain` does per-character font fallback; `TableLayout` sizes table columns for any renderer. |
 | `core` | `FormatRegistry` (factory), `Converter` (single conversion), `ConversionOptions`. |
 | `core.batch` | `JobPlanner` (expands folders), `BatchConverter` (parallel, failure-tolerant), `ConversionListener` (progress observer). |
-| `pdf` | `PdfMerger`, `PdfSplitter`, `SplitStrategy` (sealed: `EveryNPages`, `ByRanges`), `PdfPageEditor` + `PageEditPlan`, `ImagesToPdf`, `PdfCompressor`, `PdfSecurity`, `PageNumberer`, `PdfSigner`, and `PageGeometry` (places content correctly on rotated pages). |
+| `pdf` | `PdfMerger`, `PdfSplitter`, `SplitStrategy` (sealed: `EveryNPages`, `ByRanges`), `PdfPageEditor` + `PageEditPlan`, `ImagesToPdf`, `PdfCompressor`, `PdfSecurity`, `PageNumberer`, `PdfSigner`, `PdfWatermarker`, `PdfImageExtractor`, `PdfPageSizer`, and `PageGeometry` (places content correctly on rotated pages). |
 | `ocr` | `OcrEngine` interface, `TesseractEngine` (runs the `tesseract` CLI with a timeout), `OcrService` (renders pages, picks the output). |
 | `web` | Javalin server; each endpoint is an `ApiHandler` subclass (template method: limits → workspace → `process` → reply). |
-| `cli` | picocli commands: convert (default), `merge`, `split`, `pages`, `images`, `compress`, `ocr`, `protect`, `unlock`, `number`, `sign`, `serve`. |
+| `public/` | The web UI: a tool registry in `app.js` builds the home screen, search, tool pages and next-step suggestions; `i18n.js` holds English and Kiswahili text. |
+| `cli` | picocli commands: convert (default), `merge`, `split`, `pages`, `images`, `compress`, `ocr`, `protect`, `unlock`, `number`, `sign`, `watermark`, `extract-images`, `crop`, `serve`. |
 
 ### Adding a format
 
@@ -209,7 +238,8 @@ Reader ──► Document (pages → blocks) ──► Writer
 - PowerPoint → PDF draws each slide as an image, so the PDF text isn't selectable; use → Word or → text to get the text. Slide rendering uses Apache POI, so unusual effects may look simpler than in PowerPoint.
 - "Sign" places a picture of a signature; it is not a certified (cryptographic) digital signature. Typed signatures use a handwriting font if the browser has one (Windows, macOS), otherwise italic serif.
 - Password-protected Word/Excel/PowerPoint files can't be opened; unlock them in Office first.
+- Messages generated by the server are in English; the common ones are translated in the Kiswahili interface.
+- Crop & resize changes the visible page area; links and form fields keep their original positions.
 - Word → image uses docsmelt's own simple layout, not Word's.
-- Images to PDF ignores EXIF orientation, so some phone photos may come out sideways; rotate them in Organize.
 - Compression only shrinks images; PDFs that are mostly text or vector graphics barely change (they're never made bigger).
 - OCR accuracy depends on scan quality; locally it needs `apt install tesseract-ocr` (the Docker image includes it).
