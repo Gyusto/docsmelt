@@ -1,0 +1,18 @@
+# docker compose up -d   →   http://localhost:8080
+# Port taken? FILEKIT_PORT=8090 docker compose up -d
+services:
+  filekit:
+    build: .
+    image: filekit:latest
+    ports:
+      - "127.0.0.1:${FILEKIT_PORT:-8080}:8080"   # drop "127.0.0.1:" to expose it to your network
+    command: ["serve", "--host", "0.0.0.0", "--port", "8080",
+              "--max-upload-mb", "50", "--max-files", "20", "--rate-limit", "30"]
+    restart: unless-stopped
+    read_only: true            # app only writes to /tmp
+    tmpfs:
+      - /tmp:size=2g
+    deploy:
+      resources:
+        limits:
+          memory: 1g

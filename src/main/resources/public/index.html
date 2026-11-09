@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>filekit</title>
+  <meta name="description" content="Convert, merge and split PDF, Word and image files.">
+  <meta name="theme-color" content="#6aa8ff">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="stylesheet" href="webjars/font-awesome/6.7.2/css/all.min.css">
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <div class="brand">
+        <img src="favicon.svg" alt="" width="40" height="40">
+        <span class="wordmark">file<b>kit</b></span>
+      </div>
+      <p class="tagline">Convert, merge and split PDF, Word and image files.</p>
+    </header>
+
+    <nav class="tabs" role="tablist" aria-label="Tools">
+      <button role="tab" id="tab-convert" aria-controls="panel-convert" aria-selected="true">
+        <i class="fa-solid fa-right-left" aria-hidden="true"></i> Convert</button>
+      <button role="tab" id="tab-merge" aria-controls="panel-merge" aria-selected="false" tabindex="-1">
+        <i class="fa-solid fa-layer-group" aria-hidden="true"></i> Merge PDF</button>
+      <button role="tab" id="tab-split" aria-controls="panel-split" aria-selected="false" tabindex="-1">
+        <i class="fa-solid fa-scissors" aria-hidden="true"></i> Split PDF</button>
+    </nav>
+
+    <!-- Convert -->
+    <section class="card" role="tabpanel" id="panel-convert" aria-labelledby="tab-convert" data-tool="convert">
+      <label class="dropzone">
+        <input type="file" multiple class="visually-hidden">
+        <i class="fa-solid fa-cloud-arrow-up dz-icon" aria-hidden="true"></i>
+        <span class="dz-title">Drop files here or <u>browse</u></span>
+        <span class="dz-hint">PDF, Word, text or images</span>
+      </label>
+      <ul class="files" aria-live="polite"></ul>
+
+      <div class="row">
+        <label for="convert-to">Convert to</label>
+        <select id="convert-to" name="to"></select>
+      </div>
+
+      <details class="options">
+        <summary><i class="fa-solid fa-sliders" aria-hidden="true"></i> More options</summary>
+        <div class="grid">
+          <label>Pages <input name="pages" placeholder="all, e.g. 1-3,5" autocomplete="off"></label>
+          <label>Image DPI <input name="dpi" type="number" min="36" max="600" value="150"></label>
+          <label>JPEG quality <input name="quality" type="number" min="1" max="100" value="90"></label>
+        </div>
+      </details>
+
+      <button class="primary" data-action><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Convert</button>
+      <div class="status" role="status"></div>
+    </section>
+
+    <!-- Merge -->
+    <section class="card" role="tabpanel" id="panel-merge" aria-labelledby="tab-merge" data-tool="merge" hidden>
+      <label class="dropzone">
+        <input type="file" multiple class="visually-hidden">
+        <i class="fa-solid fa-copy dz-icon" aria-hidden="true"></i>
+        <span class="dz-title">Drop files to merge or <u>browse</u></span>
+        <span class="dz-hint">PDFs, plus Word, text or images (converted automatically)</span>
+      </label>
+      <ul class="files sortable" aria-live="polite"></ul>
+      <p class="note"><i class="fa-solid fa-arrow-down-short-wide" aria-hidden="true"></i>
+        Files are merged top to bottom. Use the arrows to reorder.</p>
+
+      <button class="primary" data-action><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Merge into one PDF</button>
+      <div class="status" role="status"></div>
+    </section>
+
+    <!-- Split -->
+    <section class="card" role="tabpanel" id="panel-split" aria-labelledby="tab-split" data-tool="split" hidden>
+      <label class="dropzone">
+        <input type="file" accept=".pdf,application/pdf" class="visually-hidden">
+        <i class="fa-solid fa-file-pdf dz-icon" aria-hidden="true"></i>
+        <span class="dz-title">Drop a PDF here or <u>browse</u></span>
+        <span class="dz-hint">One PDF at a time</span>
+      </label>
+      <ul class="files" aria-live="polite"></ul>
+
+      <fieldset class="choice">
+        <legend>How to split</legend>
+        <label><input type="radio" name="mode" value="every" checked>
+          Every <input name="every" type="number" min="1" value="1" class="inline-num" aria-label="Pages per file"> page(s)</label>
+        <label><input type="radio" name="mode" value="ranges">
+          Custom ranges <input name="ranges" placeholder="1-3,4-9,10-" class="inline-text" aria-label="Page ranges" autocomplete="off"></label>
+      </fieldset>
+
+      <button class="primary" data-action><i class="fa-solid fa-scissors" aria-hidden="true"></i> Split PDF</button>
+      <div class="status" role="status"></div>
+    </section>
+
+    <footer class="foot">
+      <span id="limits"></span>
+      <span><i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+        Files are processed on this server and deleted immediately afterwards.</span>
+    </footer>
+  </main>
+</body>
+</html>
