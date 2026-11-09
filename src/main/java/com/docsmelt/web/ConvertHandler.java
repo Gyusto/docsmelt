@@ -25,7 +25,7 @@ final class ConvertHandler extends ApiHandler {
     }
 
     @Override
-    protected List<Path> process(Context ctx, List<Path> inputs, Workspace workspace) {
+    protected Reply process(Context ctx, List<Path> inputs, Workspace workspace) {
         Format target = targetFormat(ctx.formParam("to"));
         ConversionOptions options = options(ctx);
 
@@ -40,12 +40,7 @@ final class ConvertHandler extends ApiHandler {
                 throw new ConversionException(input.getFileName() + ": " + e.getMessage(), e);
             }
         }
-        return outputs;
-    }
-
-    @Override
-    protected String zipName(List<Path> inputs) {
-        return inputs.size() == 1 ? stem(inputs.getFirst()) + ".zip" : "converted.zip";
+        return new Reply.Files(outputs, inputs.size() == 1 ? stem(inputs.getFirst()) + ".zip" : "converted.zip");
     }
 
     private Format targetFormat(String to) {

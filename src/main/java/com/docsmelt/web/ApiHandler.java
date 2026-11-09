@@ -53,11 +53,18 @@ abstract class ApiHandler implements Handler {
         this.slots = slots;
     }
 
-    /** The actual work. Returns the files to send back, all inside {@code workspace.out()}. */
-    protected abstract List<Path> process(Context ctx, List<Path> inputs, Workspace workspace);
+    /** What an endpoint sends back. */
+    sealed interface Reply {
+        /** Files inside the workspace; one is sent as-is, several as {@code zipName}. */
+        record Files(List<Path> files, String zipName) implements Reply {
+        }
 
-    /** Name for the zip when several files are returned. */
-    protected abstract String zipName(List<Path> inputs);
+        record Json(String body) implements Reply {
+        }
+    }
+
+    /** The actual work. Files returned must live inside {@code workspace.out()}. */
+    protected abstract Reply process(Context ctx, List<Path> inputs, Workspace workspace);
 
     protected int minFiles() {
         return 1;
@@ -82,9 +89,13 @@ abstract class ApiHandler implements Handler {
             for (UploadedFile upload : uploads) {
                 inputs.add(workspace.save(upload));
             }
-            List<Path> outputs = process(ctx, inputs, workspace);
-            respond(ctx, outputs, zipName(inputs));
-            LOG.info("{} {} file(s) -> {} file(s) in {} ms", ctx.path(), inputs.size(), outputs.size(),
+            Reply reply = process(ctx, inputs, workspace);
+            switch (reply) {
+                case Reply.Files f -> respond(ctx, f.files(), f.zipName());
+                case Reply.Json j -> ctx.status(HttpStatus.OK).contentType("application/json")
+                        .header("Cache-Control", "no-store").result(j.body());
+            }
+            LOG.info("{} {} file(s) in {} ms", ctx.path(), inputs.size(),
                     TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
         } finally {
             slots.release();

@@ -24,14 +24,9 @@ final class MergeHandler extends ApiHandler {
     }
 
     @Override
-    protected List<Path> process(Context ctx, List<Path> inputs, Workspace workspace) {
+    protected Reply process(Context ctx, List<Path> inputs, Workspace workspace) {
         Path out = workspace.out().resolve("merged.pdf");
         merger.merge(inputs, out, ConversionOptions.DEFAULT);
-        return List.of(out);
-    }
-
-    @Override
-    protected String zipName(List<Path> inputs) {
-        return "merged.zip"; // never used: merge always returns one file
+        return new Reply.Files(List.of(out), "merged.zip");
     }
 }

@@ -3,6 +3,8 @@ package com.docsmelt.web;
 import com.docsmelt.core.Converter;
 import com.docsmelt.format.Format;
 import com.docsmelt.io.ConversionException;
+import com.docsmelt.ocr.OcrService;
+import com.docsmelt.ocr.TesseractEngine;
 import com.docsmelt.pdf.PdfMerger;
 import com.docsmelt.pdf.PdfSplitter;
 import io.javalin.Javalin;
@@ -26,6 +28,11 @@ import java.util.stream.Collectors;
  *   POST /api/convert   multipart: files[], to, pages?, dpi?, quality?
  *   POST /api/merge     multipart: files[] (2+)
  *   POST /api/split     multipart: files (1 PDF), every? | ranges?
+ *   POST /api/preview   multipart: files (1 PDF) → JSON thumbnails
+ *   POST /api/organize  multipart: files (1 PDF), order, rotate?
+ *   POST /api/compress  multipart: files[] (PDFs), level?
+ *   POST /api/images-to-pdf  multipart: files[] (images), pageSize?, margin?
+ *   POST /api/ocr       multipart: files (1 PDF/image), lang?, output?, pages?
  * </pre>
  */
 public final class WebServer implements AutoCloseable {
@@ -36,6 +43,10 @@ public final class WebServer implements AutoCloseable {
     private final Javalin app;
 
     public WebServer(ServerConfig config, Converter converter) {
+        this(config, converter, new OcrService(new TesseractEngine()));
+    }
+
+    public WebServer(ServerConfig config, Converter converter, OcrService ocr) {
         this.config = config;
         Semaphore slots = new Semaphore(config.maxConcurrent());
 
@@ -50,10 +61,15 @@ public final class WebServer implements AutoCloseable {
 
         app.before(WebServer::securityHeaders);
         app.get("/api/health", ctx -> ctx.result("ok"));
-        app.get("/api/formats", ctx -> json(ctx, 200, formatsJson(converter, config)));
+        app.get("/api/formats", ctx -> json(ctx, 200, formatsJson(converter, config, ocr)));
         app.post("/api/convert", new ConvertHandler(config, slots, converter));
         app.post("/api/merge", new MergeHandler(config, slots, new PdfMerger(converter)));
         app.post("/api/split", new SplitHandler(config, slots, new PdfSplitter()));
+        app.post("/api/preview", new PreviewHandler(config, slots));
+        app.post("/api/organize", new OrganizeHandler(config, slots));
+        app.post("/api/compress", new CompressHandler(config, slots));
+        app.post("/api/images-to-pdf", new ImagesHandler(config, slots));
+        app.post("/api/ocr", new OcrHandler(config, slots, ocr));
 
         app.exception(ConversionException.class, (e, ctx) -> error(ctx, 400, e.getMessage()));
         app.exception(IllegalArgumentException.class, (e, ctx) -> error(ctx, 400, e.getMessage()));
@@ -86,11 +102,16 @@ public final class WebServer implements AutoCloseable {
                 "default-src 'self'; img-src 'self' data: blob:; style-src 'self'; frame-ancestors 'none'");
     }
 
-    private static String formatsJson(Converter converter, ServerConfig config) {
+    private static String formatsJson(Converter converter, ServerConfig config, OcrService ocr) {
+        String langs = ocr.engine().languages().stream()
+                .map(l -> "\"" + escape(l) + "\"")
+                .collect(Collectors.joining(",", "[", "]"));
         return "{\"read\":" + extensions(converter.registry().readableFormats())
                 + ",\"write\":" + extensions(converter.registry().writableFormats())
                 + ",\"maxUploadMb\":" + config.maxUploadMb()
-                + ",\"maxFiles\":" + config.maxFiles() + "}";
+                + ",\"maxFiles\":" + config.maxFiles()
+                + ",\"ocr\":{\"available\":" + ocr.engine().isAvailable() + ",\"languages\":" + langs
+                + ",\"maxPages\":" + OcrHandler.MAX_PAGES + "}}";
     }
 
     private static String extensions(Collection<Format> formats) {

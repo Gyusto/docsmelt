@@ -25,13 +25,9 @@ final class SplitHandler extends ApiHandler {
     }
 
     @Override
-    protected List<Path> process(Context ctx, List<Path> inputs, Workspace workspace) {
-        return splitter.split(inputs.getFirst(), strategy(ctx), workspace.out());
-    }
-
-    @Override
-    protected String zipName(List<Path> inputs) {
-        return stem(inputs.getFirst()) + "-split.zip";
+    protected Reply process(Context ctx, List<Path> inputs, Workspace workspace) {
+        return new Reply.Files(splitter.split(inputs.getFirst(), strategy(ctx), workspace.out()),
+                stem(inputs.getFirst()) + "-split.zip");
     }
 
     private static SplitStrategy strategy(Context ctx) {
