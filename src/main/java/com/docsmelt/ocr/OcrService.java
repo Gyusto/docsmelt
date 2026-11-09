@@ -1,5 +1,6 @@
 package com.docsmelt.ocr;
 
+import com.docsmelt.core.Progress;
 import com.docsmelt.format.Format;
 import com.docsmelt.io.ConversionException;
 import com.docsmelt.io.PageRange;
@@ -73,17 +74,32 @@ public final class OcrService {
         try {
             work = Files.createTempDirectory("docsmelt-ocr");
             List<Path> images = in == Format.PDF ? renderPdf(source, work, options) : List.of(toPng(source, work));
-            Path base = work.resolve("result");
             Set<OcrEngine.Output> wanted = out == Format.PDF
                     ? Set.of(OcrEngine.Output.SEARCHABLE_PDF) : Set.of(OcrEngine.Output.TEXT);
-            engine.recognize(images, options.languages(), options.dpi(), base, wanted);
+
+            // One page at a time: progress can be reported and a cancelled job stops promptly.
+            List<Path> pageResults = new ArrayList<>();
+            for (int i = 0; i < images.size(); i++) {
+                Progress.step(i, images.size());
+                Path base = work.resolve(String.format("result-%04d", i));
+                engine.recognize(List.of(images.get(i)), options.languages(), options.dpi(), base, wanted);
+                pageResults.add(produced(base, out == Format.PDF ? "pdf" : "txt"));
+            }
 
             Files.createDirectories(target.toAbsolutePath().getParent());
-            switch (out) {
-                case PDF -> Files.copy(produced(base, "pdf"), target, StandardCopyOption.REPLACE_EXISTING);
-                case TXT -> Files.copy(produced(base, "txt"), target, StandardCopyOption.REPLACE_EXISTING);
-                default -> {
-                    Document doc = new TextDocumentReader().read(produced(base, "txt"));
+            if (out == Format.PDF) {
+                mergePdfs(pageResults, target);
+            } else {
+                Path text = work.resolve("result.txt");
+                List<String> pages = new ArrayList<>();
+                for (Path p : pageResults) {
+                    pages.add(Files.readString(p).replaceAll("\\f\\s*$", "").stripTrailing());
+                }
+                Files.writeString(text, String.join("\n\f\n", pages) + "\n");
+                if (out == Format.TXT) {
+                    Files.copy(text, target, StandardCopyOption.REPLACE_EXISTING);
+                } else {
+                    Document doc = new TextDocumentReader().read(text);
                     new DocxDocumentWriter().write(doc, target);
                 }
             }
@@ -93,6 +109,19 @@ public final class OcrService {
         } finally {
             deleteQuietly(work);
         }
+    }
+
+    private static void mergePdfs(List<Path> parts, Path target) throws IOException {
+        if (parts.size() == 1) {
+            Files.copy(parts.getFirst(), target, StandardCopyOption.REPLACE_EXISTING);
+            return;
+        }
+        org.apache.pdfbox.multipdf.PDFMergerUtility merger = new org.apache.pdfbox.multipdf.PDFMergerUtility();
+        for (Path p : parts) {
+            merger.addSource(p.toFile());
+        }
+        merger.setDestinationFileName(target.toString());
+        merger.mergeDocuments(org.apache.pdfbox.io.IOUtils.createTempFileOnlyStreamCache());
     }
 
     private void validateLanguages(String spec) {
@@ -126,7 +155,9 @@ public final class OcrService {
             List<Path> images = new ArrayList<>();
             for (int page : selected) {
                 // Grayscale is plenty for OCR and much faster to process.
-                BufferedImage img = renderer.renderImageWithDPI(page - 1, options.dpi(), ImageType.GRAY);
+                var box = pdf.getPage(page - 1).getCropBox();
+                float dpi = com.docsmelt.io.Limits.renderDpi(box.getWidth(), box.getHeight(), options.dpi());
+                BufferedImage img = renderer.renderImageWithDPI(page - 1, dpi, ImageType.GRAY);
                 Path png = work.resolve(String.format("page-%04d.png", page));
                 ImageIO.write(img, "png", png.toFile());
                 images.add(png);

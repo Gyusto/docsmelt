@@ -6,26 +6,24 @@ import com.docsmelt.format.Format;
 import com.docsmelt.io.ConversionException;
 import com.docsmelt.io.PageRange;
 import io.javalin.http.BadRequestResponse;
-import io.javalin.http.Context;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.Semaphore;
 
 /** POST /api/convert — files[], to, [pages], [dpi], [quality] */
 final class ConvertHandler extends ApiHandler {
 
     private final Converter converter;
 
-    ConvertHandler(ServerConfig config, Semaphore slots, Converter converter) {
-        super(config, slots);
+    ConvertHandler(ServerConfig config, JobManager jobs, Converter converter) {
+        super(config, jobs);
         this.converter = converter;
     }
 
     @Override
-    protected Reply process(Context ctx, List<Path> inputs, Workspace workspace) {
+    protected Reply process(Params ctx, List<Path> inputs, Workspace workspace) {
         Format target = targetFormat(ctx.formParam("to"));
         ConversionOptions options = options(ctx);
 
@@ -54,7 +52,7 @@ final class ConvertHandler extends ApiHandler {
         return format;
     }
 
-    private static ConversionOptions options(Context ctx) {
+    private static ConversionOptions options(Params ctx) {
         int dpi = intParam(ctx, "dpi", 150, 36, 600);
         int quality = intParam(ctx, "quality", 90, 1, 100);
         PageRange pages;

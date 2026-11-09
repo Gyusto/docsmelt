@@ -6,12 +6,10 @@ import com.docsmelt.pdf.PdfImageExtractor;
 import com.docsmelt.pdf.PdfPageSizer;
 import com.docsmelt.pdf.PdfWatermarker;
 import io.javalin.http.BadRequestResponse;
-import io.javalin.http.Context;
 
 import java.awt.Color;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.Semaphore;
 
 /**
  * The newer single-PDF tools:
@@ -27,8 +25,8 @@ final class PageToolsHandler extends ApiHandler {
 
     private final Tool tool;
 
-    PageToolsHandler(ServerConfig config, Semaphore slots, Tool tool) {
-        super(config, slots);
+    PageToolsHandler(ServerConfig config, JobManager jobs, Tool tool) {
+        super(config, jobs);
         this.tool = tool;
     }
 
@@ -38,7 +36,7 @@ final class PageToolsHandler extends ApiHandler {
     }
 
     @Override
-    protected Reply process(Context ctx, List<Path> inputs, Workspace workspace) {
+    protected Reply process(Params ctx, List<Path> inputs, Workspace workspace) {
         Path pdf = inputs.stream().filter(p -> Format.fromPath(p) == Format.PDF).findFirst()
                 .orElseThrow(() -> new BadRequestResponse("Please choose a PDF file"));
         String stem = stem(pdf);
@@ -76,7 +74,7 @@ final class PageToolsHandler extends ApiHandler {
         };
     }
 
-    private static float number(Context ctx, String name, float fallback) {
+    private static float number(Params ctx, String name, float fallback) {
         String raw = ctx.formParam(name);
         if (raw == null || raw.isBlank()) {
             return fallback;

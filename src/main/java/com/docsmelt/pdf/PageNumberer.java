@@ -1,5 +1,6 @@
 package com.docsmelt.pdf;
 
+import com.docsmelt.core.Progress;
 import com.docsmelt.format.Format;
 import com.docsmelt.io.ConversionException;
 import com.docsmelt.io.PageRange;
@@ -84,6 +85,7 @@ public final class PageNumberer {
                 if (!options.pages().includes(i + 1)) {
                     continue;
                 }
+                Progress.step(i, total);
                 String label = options.template()
                         .replace("{n}", String.valueOf(options.start() + i))
                         .replace("{total}", String.valueOf(lastNumber));

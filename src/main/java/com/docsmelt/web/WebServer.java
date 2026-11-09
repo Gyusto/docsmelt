@@ -16,7 +16,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
-import java.util.concurrent.Semaphore;
 import java.util.stream.Collectors;
 
 /**
@@ -46,6 +45,14 @@ public final class WebServer implements AutoCloseable {
 
     private final ServerConfig config;
     private final Javalin app;
+    private final JobManager jobs;
+
+    static {
+        // Office files are zips: refuse "zip bombs" (tiny files that inflate to gigabytes).
+        org.apache.poi.openxml4j.util.ZipSecureFile.setMinInflateRatio(0.01);
+        org.apache.poi.openxml4j.util.ZipSecureFile.setMaxEntrySize(500L * 1024 * 1024);
+        org.apache.poi.openxml4j.util.ZipSecureFile.setMaxTextSize(100L * 1024 * 1024);
+    }
 
     public WebServer(ServerConfig config, Converter converter) {
         this(config, converter, new OcrService(new TesseractEngine()));
@@ -53,7 +60,8 @@ public final class WebServer implements AutoCloseable {
 
     public WebServer(ServerConfig config, Converter converter, OcrService ocr) {
         this.config = config;
-        Semaphore slots = new Semaphore(config.maxConcurrent());
+        this.jobs = new JobManager(config);
+        JobManager slots = jobs;
 
         this.app = Javalin.create(c -> {
             c.showJavalinBanner = false;
@@ -83,6 +91,35 @@ public final class WebServer implements AutoCloseable {
         app.post("/api/extract-images", new PageToolsHandler(config, slots, PageToolsHandler.Tool.EXTRACT_IMAGES));
         app.post("/api/crop", new PageToolsHandler(config, slots, PageToolsHandler.Tool.CROP));
 
+        // Background jobs: poll status, fetch the result (once), or cancel.
+        app.get("/api/jobs/{id}", ctx -> json(ctx, 200, job(ctx).statusJson()));
+        app.get("/api/jobs/{id}/result", ctx -> {
+            Job job = job(ctx);
+            if (job.state != Job.State.DONE) {
+                throw new io.javalin.http.ConflictResponse("The job hasn't finished");
+            }
+            if (job.result.json() != null) {
+                ApiHandler.send(ctx, job.result);
+                jobs.forget(job);
+                return;
+            }
+            ApiHandler.attachmentHeaders(ctx, job.result);
+            // Stream the file, then delete everything once it has been sent.
+            ctx.result(new java.io.FilterInputStream(java.nio.file.Files.newInputStream(job.result.file())) {
+                @Override
+                public void close() throws java.io.IOException {
+                    super.close();
+                    jobs.forget(job);
+                }
+            });
+        });
+        app.delete("/api/jobs/{id}", ctx -> {
+            Job job = job(ctx);
+            jobs.cancel(job, 499, "Cancelled");
+            jobs.forget(job);
+            ctx.status(204);
+        });
+
         app.exception(ConversionException.class, (e, ctx) -> error(ctx, 400, e.getMessage()));
         app.exception(IllegalArgumentException.class, (e, ctx) -> error(ctx, 400, e.getMessage()));
         app.exception(HttpResponseException.class, (e, ctx) -> error(ctx, e.getStatus(), e.getMessage()));
@@ -105,6 +142,15 @@ public final class WebServer implements AutoCloseable {
     @Override
     public void close() {
         app.stop();
+        jobs.close();
+    }
+
+    private Job job(Context ctx) {
+        Job job = jobs.get(ctx.pathParam("id"));
+        if (job == null) {
+            throw new io.javalin.http.NotFoundResponse("This job doesn't exist or has expired");
+        }
+        return job;
     }
 
     private static void securityHeaders(Context ctx) {

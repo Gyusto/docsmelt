@@ -2,19 +2,17 @@ package com.docsmelt.web;
 
 import com.docsmelt.core.ConversionOptions;
 import com.docsmelt.pdf.PdfMerger;
-import io.javalin.http.Context;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.Semaphore;
 
 /** POST /api/merge — files[] in the order they should appear. */
 final class MergeHandler extends ApiHandler {
 
     private final PdfMerger merger;
 
-    MergeHandler(ServerConfig config, Semaphore slots, PdfMerger merger) {
-        super(config, slots);
+    MergeHandler(ServerConfig config, JobManager jobs, PdfMerger merger) {
+        super(config, jobs);
         this.merger = merger;
     }
 
@@ -24,7 +22,7 @@ final class MergeHandler extends ApiHandler {
     }
 
     @Override
-    protected Reply process(Context ctx, List<Path> inputs, Workspace workspace) {
+    protected Reply process(Params ctx, List<Path> inputs, Workspace workspace) {
         Path out = workspace.out().resolve("merged.pdf");
         merger.merge(inputs, out, ConversionOptions.DEFAULT);
         return new Reply.Files(List.of(out), "merged.zip");

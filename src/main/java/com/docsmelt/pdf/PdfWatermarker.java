@@ -1,5 +1,6 @@
 package com.docsmelt.pdf;
 
+import com.docsmelt.core.Progress;
 import com.docsmelt.format.Format;
 import com.docsmelt.io.ConversionException;
 import com.docsmelt.io.PageRange;
@@ -89,6 +90,7 @@ public final class PdfWatermarker {
                 if (!o.pages().includes(i + 1)) {
                     continue;
                 }
+                Progress.step(i, total);
                 PDPage page = pdf.getPage(i);
                 try (PDPageContentStream cs = new PDPageContentStream(pdf, page, PDPageContentStream.AppendMode.APPEND, true, true)) {
                     cs.setGraphicsStateParameters(alpha);

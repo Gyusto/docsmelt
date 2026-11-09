@@ -1,5 +1,7 @@
 package com.docsmelt.io.pdf;
 
+import com.docsmelt.core.Progress;
+import com.docsmelt.io.Limits;
 import com.docsmelt.io.ConversionException;
 import com.docsmelt.io.DocumentReader;
 import com.docsmelt.io.ReadOptions;
@@ -40,11 +42,14 @@ public final class PdfDocumentReader implements DocumentReader {
                 if (!options.pages().includes(i + 1)) {
                     continue; // skipped pages are never extracted or rendered
                 }
+                Progress.step(i, total);
                 Page page = document.newPage();
                 addText(page, stripper, pdf, i + 1);
                 addImages(page, pdf.getPage(i));
                 if (renderer != null) {
-                    page.withSnapshot(renderer.renderImageWithDPI(i, options.dpi(), ImageType.RGB));
+                    var box = pdf.getPage(i).getCropBox();
+                    page.withSnapshot(renderer.renderImageWithDPI(i,
+                            Limits.renderDpi(box.getWidth(), box.getHeight(), options.dpi()), ImageType.RGB));
                 }
             }
             options.pages().requireAny(document.pages().size(), total);
@@ -83,7 +88,8 @@ public final class PdfDocumentReader implements DocumentReader {
             return;
         }
         for (COSName name : resources.getXObjectNames()) {
-            if (resources.getXObject(name) instanceof PDImageXObject image) {
+            if (resources.getXObject(name) instanceof PDImageXObject image
+                    && Limits.pixelsOk(image.getWidth(), image.getHeight())) {
                 page.add(new ImageBlock(image.getImage()));
             }
         }

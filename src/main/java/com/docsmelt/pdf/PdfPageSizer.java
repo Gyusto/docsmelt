@@ -1,5 +1,7 @@
 package com.docsmelt.pdf;
 
+import com.docsmelt.core.Progress;
+import com.docsmelt.io.Limits;
 import com.docsmelt.format.Format;
 import com.docsmelt.io.ConversionException;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -63,6 +65,7 @@ public final class PdfPageSizer {
             int changed = 0;
             PDFRenderer renderer = marginMm < 0 ? new PDFRenderer(pdf) : null;
             for (int i = 0; i < pdf.getNumberOfPages(); i++) {
+                Progress.step(i, pdf.getNumberOfPages());
                 PDPage page = pdf.getPage(i);
                 PDRectangle box = page.getCropBox();
                 PDRectangle cropped = marginMm < 0 ? contentBox(renderer, page, i) : inset(box, marginMm * MM);
@@ -115,12 +118,14 @@ public final class PdfPageSizer {
         page.setRotation(0); // analyse in the page's own coordinates
         BufferedImage img;
         try {
-            img = renderer.renderImageWithDPI(index, ANALYSIS_DPI, ImageType.GRAY);
+            PDRectangle box = page.getCropBox();
+            img = renderer.renderImageWithDPI(index, Limits.renderDpi(box.getWidth(), box.getHeight(), ANALYSIS_DPI), ImageType.GRAY);
         } finally {
             page.setRotation(rotation);
         }
         int w = img.getWidth();
         int h = img.getHeight();
+        float px = page.getCropBox().getWidth() / w; // points per pixel (DPI may have been lowered)
         int minX = w, minY = h, maxX = -1, maxY = -1;
         var raster = img.getRaster();
         for (int y = 0; y < h; y++) {
@@ -137,7 +142,6 @@ public final class PdfPageSizer {
             return null;
         }
         PDRectangle box = page.getCropBox();
-        float px = 72f / ANALYSIS_DPI;
         float llx = box.getLowerLeftX() + minX * px - AUTO_PADDING;
         float urx = box.getLowerLeftX() + (maxX + 1) * px + AUTO_PADDING;
         float ury = box.getUpperRightY() - minY * px + AUTO_PADDING;

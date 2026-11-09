@@ -89,9 +89,10 @@ final class TestFiles {
      * Stand-in for Tesseract: "recognizes" page N as "Recognized text N" and
      * remembers what it was asked to do.
      */
-    static final class FakeOcrEngine implements OcrEngine {
+    static class FakeOcrEngine implements OcrEngine {
         final List<Integer> imageCounts = new ArrayList<>();
         int lastDpi;
+        int pagesSeen;
         String lastLanguages;
         private final boolean available;
 
@@ -121,7 +122,7 @@ final class TestFiles {
             }
             List<String> pages = new ArrayList<>();
             for (int i = 1; i <= images.size(); i++) {
-                pages.add("Recognized text " + i);
+                pages.add("Recognized text " + (++pagesSeen)); // keeps counting across one-page calls
             }
             try {
                 if (outputs.contains(Output.TEXT)) {

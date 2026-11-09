@@ -2,22 +2,20 @@ package com.docsmelt.web;
 
 import com.docsmelt.io.ConversionException;
 import com.docsmelt.pdf.PdfCompressor;
-import io.javalin.http.Context;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Semaphore;
 
 /** POST /api/compress — files[] (PDFs), level=low|medium|high */
 final class CompressHandler extends ApiHandler {
 
-    CompressHandler(ServerConfig config, Semaphore slots) {
-        super(config, slots);
+    CompressHandler(ServerConfig config, JobManager jobs) {
+        super(config, jobs);
     }
 
     @Override
-    protected Reply process(Context ctx, List<Path> inputs, Workspace workspace) {
+    protected Reply process(Params ctx, List<Path> inputs, Workspace workspace) {
         PdfCompressor.Level level = PdfCompressor.Level.parse(ImagesHandler.orDefault(ctx.formParam("level"), "medium"));
         PdfCompressor compressor = new PdfCompressor();
         List<Path> outputs = new ArrayList<>();

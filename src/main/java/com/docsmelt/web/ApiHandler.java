@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -43,14 +42,16 @@ abstract class ApiHandler implements Handler {
             "jpg", "image/jpeg",
             "bmp", "image/bmp",
             "gif", "image/gif",
+            "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             "zip", "application/zip");
 
     private final ServerConfig config;
-    private final Semaphore slots;
+    private final JobManager jobs;
 
-    ApiHandler(ServerConfig config, Semaphore slots) {
+    ApiHandler(ServerConfig config, JobManager jobs) {
         this.config = config;
-        this.slots = slots;
+        this.jobs = jobs;
     }
 
     /** What an endpoint sends back. */
@@ -64,7 +65,7 @@ abstract class ApiHandler implements Handler {
     }
 
     /** The actual work. Files returned must live inside {@code workspace.out()}. */
-    protected abstract Reply process(Context ctx, List<Path> inputs, Workspace workspace);
+    protected abstract Reply process(Params ctx, List<Path> inputs, Workspace workspace);
 
     protected int minFiles() {
         return 1;
@@ -74,31 +75,59 @@ abstract class ApiHandler implements Handler {
         return config.maxFiles();
     }
 
+    /**
+     * Saves the uploads, then runs {@link #process} as a background job.
+     * With form field {@code async=true} the response is 202 with the job id
+     * (poll {@code /api/jobs/{id}}); otherwise this waits and sends the result.
+     */
     @Override
     public final void handle(Context ctx) throws Exception {
         NaiveRateLimit.requestPerTimeUnit(ctx, config.requestsPerMinute(), TimeUnit.MINUTES);
         List<UploadedFile> uploads = ctx.uploadedFiles("files");
         validate(uploads);
+        Params params = Params.of(ctx); // the job may outlive this request
 
-        if (!slots.tryAcquire(30, TimeUnit.SECONDS)) {
-            throw new ServiceUnavailableResponse("Server is busy, please try again in a moment");
-        }
-        long started = System.nanoTime();
-        try (Workspace workspace = new Workspace()) {
-            List<Path> inputs = new ArrayList<>();
+        Workspace workspace = new Workspace();
+        List<Path> inputs = new ArrayList<>();
+        try {
             for (UploadedFile upload : uploads) {
                 inputs.add(workspace.save(upload));
             }
-            Reply reply = process(ctx, inputs, workspace);
-            switch (reply) {
-                case Reply.Files f -> respond(ctx, f.files(), f.zipName());
-                case Reply.Json j -> ctx.status(HttpStatus.OK).contentType("application/json")
-                        .header("Cache-Control", "no-store").result(j.body());
-            }
-            LOG.info("{} {} file(s) in {} ms", ctx.path(), inputs.size(),
-                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+            checkPageCounts(inputs);
+        } catch (RuntimeException | IOException e) {
+            workspace.close();
+            throw e;
+        }
+
+        long started = System.nanoTime();
+        String path = ctx.path();
+        Job job = jobs.submit(workspace, () -> {
+            Job.Result result = toResult(process(params, inputs, workspace), workspace);
+            LOG.info("{} {} file(s) in {} ms", path, inputs.size(), TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+            return result;
+        });
+
+        if ("true".equals(params.formParam("async"))) {
+            ctx.status(HttpStatus.ACCEPTED).contentType("application/json").result("{\"id\":\"" + job.id + "\"}");
+            return;
+        }
+        try {
+            send(ctx, jobs.await(job));
         } finally {
-            slots.release();
+            jobs.forget(job);
+        }
+    }
+
+    /** Refuses PDFs with more pages than the server allows, before any work starts. */
+    private void checkPageCounts(List<Path> inputs) {
+        for (Path input : inputs) {
+            if (input.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".pdf")) {
+                int pages = com.docsmelt.io.Limits.pdfPages(input);
+                if (pages > config.maxPages()) {
+                    throw new BadRequestResponse(input.getFileName() + " has " + pages
+                            + " pages; the limit here is " + config.maxPages());
+                }
+            }
         }
     }
 
@@ -117,37 +146,52 @@ abstract class ApiHandler implements Handler {
         }
     }
 
-    /**
-     * The workspace is deleted when the handler returns, so the response is
-     * buffered in memory first (bounded by the upload limits).
-     */
-    private static void respond(Context ctx, List<Path> outputs, String zipName) throws IOException {
-        if (outputs.size() == 1) {
-            Path file = outputs.getFirst();
-            send(ctx, file.getFileName().toString(), Files.readAllBytes(file));
-            return;
-        }
-        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-        try (ZipOutputStream zip = new ZipOutputStream(buffer)) {
-            Set<String> used = new HashSet<>();
-            for (Path file : outputs) {
-                zip.putNextEntry(new ZipEntry(unique(file.getFileName().toString(), used)));
-                Files.copy(file, zip);
-                zip.closeEntry();
+    /** Turns a reply into one downloadable file (several files are zipped) or a JSON body. */
+    private static Job.Result toResult(Reply reply, Workspace workspace) throws IOException {
+        return switch (reply) {
+            case Reply.Json j -> Job.Result.json(j.body());
+            case Reply.Files f when f.files().size() == 1 -> {
+                Path file = f.files().getFirst();
+                yield new Job.Result(file, file.getFileName().toString(), contentType(file.getFileName().toString()), null);
             }
-        }
-        send(ctx, zipName, buffer.toByteArray());
+            case Reply.Files f -> {
+                Path zipFile = workspace.out().resolveSibling("result.zip");
+                try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(zipFile))) {
+                    Set<String> used = new HashSet<>();
+                    for (Path file : f.files()) {
+                        zip.putNextEntry(new ZipEntry(unique(file.getFileName().toString(), used)));
+                        Files.copy(file, zip);
+                        zip.closeEntry();
+                    }
+                }
+                yield new Job.Result(zipFile, f.zipName(), contentType(f.zipName()), null);
+            }
+        };
     }
 
-    private static void send(Context ctx, String fileName, byte[] bytes) {
+    static String contentType(String fileName) {
         String ext = fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
+        return CONTENT_TYPES.getOrDefault(ext, "application/octet-stream");
+    }
+
+    /** Sends a finished result. File results are buffered: the workspace is deleted right after. */
+    static void send(Context ctx, Job.Result result) throws IOException {
+        if (result.json() != null) {
+            ctx.status(HttpStatus.OK).contentType("application/json").header("Cache-Control", "no-store").result(result.json());
+            return;
+        }
+        attachmentHeaders(ctx, result);
+        ctx.result(Files.readAllBytes(result.file()));
+    }
+
+    static void attachmentHeaders(Context ctx, Job.Result result) {
+        String fileName = result.filename();
         String encoded = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");
         ctx.status(HttpStatus.OK)
-                .contentType(CONTENT_TYPES.getOrDefault(ext, "application/octet-stream"))
+                .contentType(result.contentType())
                 .header("Content-Disposition", "attachment; filename=\"" + fileName.replaceAll("[^\\x20-\\x7e]|\"", "_")
                         + "\"; filename*=UTF-8''" + encoded)
-                .header("Cache-Control", "no-store")
-                .result(bytes);
+                .header("Cache-Control", "no-store");
     }
 
     /** "a.pdf", "a.pdf" → "a.pdf", "a (2).pdf". */
@@ -166,7 +210,7 @@ abstract class ApiHandler implements Handler {
         return dot > 0 ? name.substring(0, dot) : name;
     }
 
-    static int intParam(Context ctx, String name, int fallback, int min, int max) {
+    static int intParam(Params ctx, String name, int fallback, int min, int max) {
         String raw = ctx.formParam(name);
         if (raw == null || raw.isBlank()) {
             return fallback;

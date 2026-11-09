@@ -2,17 +2,15 @@ package com.docsmelt.web;
 
 import com.docsmelt.io.PageRange;
 import com.docsmelt.pdf.PageNumberer;
-import io.javalin.http.Context;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.Semaphore;
 
 /** POST /api/number — one PDF, position?, format?, start?, pages?, size? */
 final class NumberHandler extends ApiHandler {
 
-    NumberHandler(ServerConfig config, Semaphore slots) {
-        super(config, slots);
+    NumberHandler(ServerConfig config, JobManager jobs) {
+        super(config, jobs);
     }
 
     @Override
@@ -21,7 +19,7 @@ final class NumberHandler extends ApiHandler {
     }
 
     @Override
-    protected Reply process(Context ctx, List<Path> inputs, Workspace workspace) {
+    protected Reply process(Params ctx, List<Path> inputs, Workspace workspace) {
         PageNumberer.Options options = new PageNumberer.Options(
                 PageNumberer.Position.parse(ImagesHandler.orDefault(ctx.formParam("position"), "bottom-center")),
                 ImagesHandler.orDefault(ctx.formParam("format"), "{n}"),

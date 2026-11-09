@@ -2,11 +2,9 @@ package com.docsmelt.web;
 
 import com.docsmelt.pdf.PdfSecurity;
 import io.javalin.http.BadRequestResponse;
-import io.javalin.http.Context;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.Semaphore;
 
 /**
  * POST /api/protect — one PDF, password, allowPrint?, allowCopy?, allowEdit? ("true"/"false")
@@ -19,8 +17,8 @@ final class SecurityHandler extends ApiHandler {
 
     private final Mode mode;
 
-    SecurityHandler(ServerConfig config, Semaphore slots, Mode mode) {
-        super(config, slots);
+    SecurityHandler(ServerConfig config, JobManager jobs, Mode mode) {
+        super(config, jobs);
         this.mode = mode;
     }
 
@@ -30,7 +28,7 @@ final class SecurityHandler extends ApiHandler {
     }
 
     @Override
-    protected Reply process(Context ctx, List<Path> inputs, Workspace workspace) {
+    protected Reply process(Params ctx, List<Path> inputs, Workspace workspace) {
         String password = ctx.formParam("password");
         if (password == null || password.isEmpty()) {
             throw new BadRequestResponse("Please enter a password");
@@ -50,7 +48,7 @@ final class SecurityHandler extends ApiHandler {
     }
 
     /** Missing = allowed, so a bare request keeps the usual permissions. */
-    private static boolean flag(Context ctx, String name) {
+    private static boolean flag(Params ctx, String name) {
         return !"false".equalsIgnoreCase(ctx.formParam(name));
     }
 }

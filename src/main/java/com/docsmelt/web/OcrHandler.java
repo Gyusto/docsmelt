@@ -3,12 +3,10 @@ package com.docsmelt.web;
 import com.docsmelt.io.PageRange;
 import com.docsmelt.ocr.OcrService;
 import io.javalin.http.BadRequestResponse;
-import io.javalin.http.Context;
 
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.Semaphore;
 
 /** POST /api/ocr — one PDF or image, lang=eng[+swa], output=pdf|txt|docx, pages? */
 final class OcrHandler extends ApiHandler {
@@ -19,8 +17,8 @@ final class OcrHandler extends ApiHandler {
 
     private final OcrService ocr;
 
-    OcrHandler(ServerConfig config, Semaphore slots, OcrService ocr) {
-        super(config, slots);
+    OcrHandler(ServerConfig config, JobManager jobs, OcrService ocr) {
+        super(config, jobs);
         this.ocr = ocr;
     }
 
@@ -30,7 +28,7 @@ final class OcrHandler extends ApiHandler {
     }
 
     @Override
-    protected Reply process(Context ctx, List<Path> inputs, Workspace workspace) {
+    protected Reply process(Params ctx, List<Path> inputs, Workspace workspace) {
         String output = ImagesHandler.orDefault(ctx.formParam("output"), "pdf");
         if (!OUTPUTS.contains(output)) {
             throw new BadRequestResponse("output must be pdf, txt or docx");

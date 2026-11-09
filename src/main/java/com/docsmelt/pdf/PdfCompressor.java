@@ -1,5 +1,7 @@
 package com.docsmelt.pdf;
 
+import com.docsmelt.core.Progress;
+import com.docsmelt.io.Limits;
 import com.docsmelt.format.Format;
 import com.docsmelt.io.ConversionException;
 import org.apache.pdfbox.cos.COSBase;
@@ -76,7 +78,10 @@ public final class PdfCompressor {
         }
         try (PDDocument pdf = PdfMerger.load(source, source)) {
             Run run = new Run(pdf, level);
+            int total = pdf.getNumberOfPages();
+            int done = 0;
             for (PDPage page : pdf.getPages()) {
+                Progress.step(done++, total);
                 PDRectangle box = page.getMediaBox();
                 int maxW = Math.round(box.getWidth() / 72f * level.maxDpi);
                 int maxH = Math.round(box.getHeight() / 72f * level.maxDpi);
@@ -140,6 +145,9 @@ public final class PdfCompressor {
         /** @return a smaller replacement, or null to keep the original */
         private PDImageXObject shrink(PDImageXObject image, int maxW, int maxH) {
             try {
+                if (!Limits.pixelsOk(image.getWidth(), image.getHeight())) {
+                    return null; // too big to decode safely: leave it as it is
+                }
                 if (image.isStencil() || image.getBitsPerComponent() == 1
                         || (long) image.getWidth() * image.getHeight() < MIN_PIXELS) {
                     return null;

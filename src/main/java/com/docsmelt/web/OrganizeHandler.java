@@ -3,11 +3,9 @@ package com.docsmelt.web;
 import com.docsmelt.pdf.PageEditPlan;
 import com.docsmelt.pdf.PdfPageEditor;
 import io.javalin.http.BadRequestResponse;
-import io.javalin.http.Context;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.Semaphore;
 
 /**
  * POST /api/organize — one PDF, {@code order} ("3,1,2": original page numbers
@@ -16,8 +14,8 @@ import java.util.concurrent.Semaphore;
  */
 final class OrganizeHandler extends ApiHandler {
 
-    OrganizeHandler(ServerConfig config, Semaphore slots) {
-        super(config, slots);
+    OrganizeHandler(ServerConfig config, JobManager jobs) {
+        super(config, jobs);
     }
 
     @Override
@@ -26,7 +24,7 @@ final class OrganizeHandler extends ApiHandler {
     }
 
     @Override
-    protected Reply process(Context ctx, List<Path> inputs, Workspace workspace) {
+    protected Reply process(Params ctx, List<Path> inputs, Workspace workspace) {
         String order = ctx.formParam("order");
         if (order == null || order.isBlank()) {
             throw new BadRequestResponse("Missing page order");

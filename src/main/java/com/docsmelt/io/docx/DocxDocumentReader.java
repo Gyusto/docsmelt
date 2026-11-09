@@ -1,5 +1,6 @@
 package com.docsmelt.io.docx;
 
+import com.docsmelt.io.Limits;
 import com.docsmelt.io.ConversionException;
 import com.docsmelt.io.DocumentReader;
 import com.docsmelt.io.ReadOptions;
@@ -60,7 +61,8 @@ public final class DocxDocumentReader implements DocumentReader {
         }
         for (XWPFRun run : p.getRuns()) {
             for (XWPFPicture picture : run.getEmbeddedPictures()) {
-                BufferedImage image = ImageIO.read(new ByteArrayInputStream(picture.getPictureData().getData()));
+                byte[] data = picture.getPictureData().getData();
+                BufferedImage image = Limits.imageFits(data) ? ImageIO.read(new ByteArrayInputStream(data)) : null;
                 if (image != null) { // null for formats ImageIO can't decode (EMF, WMF, ...)
                     page.add(new ImageBlock(image));
                 }

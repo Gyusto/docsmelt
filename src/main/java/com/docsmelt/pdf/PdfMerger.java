@@ -1,5 +1,6 @@
 package com.docsmelt.pdf;
 
+import com.docsmelt.core.Progress;
 import com.docsmelt.core.ConversionOptions;
 import com.docsmelt.core.Converter;
 import com.docsmelt.format.Format;
@@ -44,6 +45,7 @@ public final class PdfMerger {
         try (PDDocument result = new PDDocument()) {
             PDFMergerUtility merger = new PDFMergerUtility();
             for (Path input : inputs) {
+                Progress.step(open.size(), inputs.size());
                 Path pdf = input;
                 if (Format.fromPath(input) != Format.PDF) {
                     if (tempDir == null) {

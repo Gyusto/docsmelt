@@ -21,6 +21,7 @@ public final class ImageLoader {
 
     /** @return the upright image, or null if the file isn't a readable image */
     public static BufferedImage read(Path file) throws IOException {
+        com.docsmelt.io.Limits.checkImage(file); // refuse decompression bombs before decoding
         BufferedImage img = ImageIO.read(file.toFile());
         if (img == null) {
             return null;

@@ -1,5 +1,6 @@
 package com.docsmelt.io.office;
 
+import com.docsmelt.io.Limits;
 import com.docsmelt.io.ConversionException;
 import com.docsmelt.io.DocumentReader;
 import com.docsmelt.io.ReadOptions;
@@ -92,7 +93,8 @@ public final class PresentationReader implements DocumentReader {
                 case XSLFGroupShape group -> readShapes(group.getShapes(), page);
                 case XSLFTable table -> page.add(table(table));
                 case XSLFPictureShape picture -> {
-                    BufferedImage img = ImageIO.read(new ByteArrayInputStream(picture.getPictureData().getData()));
+                    byte[] data = picture.getPictureData().getData();
+                    BufferedImage img = Limits.imageFits(data) ? ImageIO.read(new ByteArrayInputStream(data)) : null;
                     if (img != null) {
                         page.add(new ImageBlock(img));
                     }

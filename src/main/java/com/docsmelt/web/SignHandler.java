@@ -3,11 +3,9 @@ package com.docsmelt.web;
 import com.docsmelt.format.Format;
 import com.docsmelt.pdf.PdfSigner;
 import io.javalin.http.BadRequestResponse;
-import io.javalin.http.Context;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.Semaphore;
 
 /**
  * POST /api/sign — files: the PDF and the signature image (any order),
@@ -15,8 +13,8 @@ import java.util.concurrent.Semaphore;
  */
 final class SignHandler extends ApiHandler {
 
-    SignHandler(ServerConfig config, Semaphore slots) {
-        super(config, slots);
+    SignHandler(ServerConfig config, JobManager jobs) {
+        super(config, jobs);
     }
 
     @Override
@@ -30,7 +28,7 @@ final class SignHandler extends ApiHandler {
     }
 
     @Override
-    protected Reply process(Context ctx, List<Path> inputs, Workspace workspace) {
+    protected Reply process(Params ctx, List<Path> inputs, Workspace workspace) {
         Path pdf = inputs.stream().filter(p -> Format.fromPath(p) == Format.PDF).findFirst()
                 .orElseThrow(() -> new BadRequestResponse("Please include the PDF to sign"));
         Path signature = inputs.stream().filter(p -> p != pdf).findFirst().orElseThrow();
@@ -42,7 +40,7 @@ final class SignHandler extends ApiHandler {
         return new Reply.Files(List.of(out), "signed.zip");
     }
 
-    private static float fraction(Context ctx, String name) {
+    private static float fraction(Params ctx, String name) {
         String raw = ctx.formParam(name);
         if (raw == null || raw.isBlank()) {
             throw new BadRequestResponse("Missing " + name);

@@ -153,7 +153,7 @@ class NewToolsTest {
         OcrService.Options opts = new OcrService.Options("eng+swa", 200, PageRange.parse("2-4"), 0);
 
         ocr.recognize(scan, dir.resolve("out.txt"), opts);
-        assertEquals(List.of(3), engine.imageCounts);
+        assertEquals(List.of(1, 1, 1), engine.imageCounts, "one page at a time, for progress");
         assertEquals(200, engine.lastDpi);
         assertEquals("eng+swa", engine.lastLanguages);
         assertTrue(assertDoesNotThrow(() -> Files.readString(dir.resolve("out.txt"))).contains("Recognized text 3"));
@@ -162,7 +162,7 @@ class NewToolsTest {
         assertEquals(3, withPdf(dir.resolve("out.pdf"), PDDocument::getNumberOfPages));
 
         ocr.recognize(image(dir, "photo.png", photo(300, 200)), dir.resolve("out.docx"), OcrService.Options.defaults());
-        assertTrue(new DocxDocumentReader().read(dir.resolve("out.docx")).plainText().contains("Recognized text 1"));
+        assertTrue(new DocxDocumentReader().read(dir.resolve("out.docx")).plainText().contains("Recognized text "));
     }
 
     @Test

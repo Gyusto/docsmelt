@@ -30,13 +30,20 @@ final class ServeCommand implements Callable<Integer> {
     @Option(names = "--max-files", defaultValue = "20", description = "Max files per request (default: ${DEFAULT-VALUE}).")
     int maxFiles;
 
+    @Option(names = "--max-pages", defaultValue = "1000", description = "Largest PDF accepted, in pages (default: ${DEFAULT-VALUE}).")
+    int maxPages;
+
+    @Option(names = "--job-timeout", defaultValue = "300", description = "Time limit per job in seconds (default: ${DEFAULT-VALUE}).")
+    int jobTimeout;
+
     @Option(names = "--rate-limit", defaultValue = "30",
             description = "Requests per minute per IP (default: ${DEFAULT-VALUE}).")
     int rateLimit;
 
     @Override
     public Integer call() throws InterruptedException {
-        ServerConfig config = new ServerConfig(host, port, maxUploadMb, maxFiles, rateLimit, DEFAULTS.maxConcurrent());
+        ServerConfig config = new ServerConfig(host, port, maxUploadMb, maxFiles, rateLimit, DEFAULTS.maxConcurrent(),
+                maxPages, jobTimeout, 100);
         WebServer server = new WebServer(config, new Converter()).start();
         Runtime.getRuntime().addShutdownHook(new Thread(server::close));
         new CountDownLatch(1).await(); // run until Ctrl+C / container stop

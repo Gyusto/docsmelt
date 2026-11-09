@@ -1,5 +1,6 @@
 package com.docsmelt.pdf;
 
+import com.docsmelt.core.Progress;
 import com.docsmelt.format.Format;
 import com.docsmelt.io.ConversionException;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -56,8 +57,9 @@ public final class ImagesToPdf {
             throw new IllegalArgumentException("Margin must be between 0 and 144 points");
         }
         try (PDDocument pdf = new PDDocument()) {
-            for (Path image : images) {
-                addPage(pdf, image, size, marginPt);
+            for (int i = 0; i < images.size(); i++) {
+                Progress.step(i, images.size());
+                addPage(pdf, images.get(i), size, marginPt);
             }
             Files.createDirectories(target.toAbsolutePath().getParent());
             pdf.save(target.toFile());

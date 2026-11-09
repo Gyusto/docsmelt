@@ -1,9 +1,9 @@
 package com.docsmelt.web;
 
+import com.docsmelt.io.Limits;
 import com.docsmelt.format.Format;
 import com.docsmelt.io.ConversionException;
 import io.javalin.http.BadRequestResponse;
-import io.javalin.http.Context;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
@@ -17,7 +17,6 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Base64;
 import java.util.List;
-import java.util.concurrent.Semaphore;
 
 /**
  * POST /api/preview — one PDF → JSON page thumbnails for the Organize tool
@@ -33,8 +32,8 @@ final class PreviewHandler extends ApiHandler {
 
     private final com.docsmelt.core.Converter converter;
 
-    PreviewHandler(ServerConfig config, Semaphore slots, com.docsmelt.core.Converter converter) {
-        super(config, slots);
+    PreviewHandler(ServerConfig config, JobManager jobs, com.docsmelt.core.Converter converter) {
+        super(config, jobs);
         this.converter = converter;
     }
 
@@ -44,7 +43,7 @@ final class PreviewHandler extends ApiHandler {
     }
 
     @Override
-    protected Reply process(Context ctx, List<Path> inputs, Workspace workspace) {
+    protected Reply process(Params ctx, List<Path> inputs, Workspace workspace) {
         Path source = inputs.getFirst();
         Format format = Format.fromPath(source);
         if (format != Format.PDF) {
@@ -71,7 +70,8 @@ final class PreviewHandler extends ApiHandler {
                 PDRectangle box = pdf.getPage(index).getCropBox();
                 boolean sideways = Math.floorMod(pdf.getPage(index).getRotation(), 180) == 90;
                 float pageWidth = sideways ? box.getHeight() : box.getWidth();
-                BufferedImage img = renderer.renderImage(index, width / pageWidth, ImageType.RGB);
+                float scale = Limits.renderScale(box.getWidth(), box.getHeight(), width / pageWidth);
+                BufferedImage img = renderer.renderImage(index, scale, ImageType.RGB);
                 return new Reply.Json("{\"count\":" + count + ",\"page\":" + (index + 1)
                         + ",\"pages\":[{\"src\":\"data:image/jpeg;base64," + jpegBase64(img) + "\",\"rotation\":0}]}");
             }
@@ -84,7 +84,8 @@ final class PreviewHandler extends ApiHandler {
                 int rotation = pdf.getPage(i).getRotation();
                 pdf.getPage(i).setRotation(0); // render upright; the browser rotates it
                 PDRectangle box = pdf.getPage(i).getCropBox();
-                BufferedImage thumb = renderer.renderImage(i, THUMB_WIDTH / box.getWidth(), ImageType.RGB);
+                float scale = Limits.renderScale(box.getWidth(), box.getHeight(), THUMB_WIDTH / box.getWidth());
+                BufferedImage thumb = renderer.renderImage(i, scale, ImageType.RGB);
                 json.append(i == 0 ? "" : ",")
                         .append("{\"src\":\"data:image/jpeg;base64,").append(jpegBase64(thumb))
                         .append("\",\"rotation\":").append(Math.floorMod(rotation, 360)).append('}');

@@ -3,19 +3,17 @@ package com.docsmelt.web;
 import com.docsmelt.pdf.PdfSplitter;
 import com.docsmelt.pdf.SplitStrategy;
 import io.javalin.http.BadRequestResponse;
-import io.javalin.http.Context;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.Semaphore;
 
 /** POST /api/split — one PDF, plus either {@code every=N} or {@code ranges=1-3,4-}. */
 final class SplitHandler extends ApiHandler {
 
     private final PdfSplitter splitter;
 
-    SplitHandler(ServerConfig config, Semaphore slots, PdfSplitter splitter) {
-        super(config, slots);
+    SplitHandler(ServerConfig config, JobManager jobs, PdfSplitter splitter) {
+        super(config, jobs);
         this.splitter = splitter;
     }
 
@@ -25,12 +23,12 @@ final class SplitHandler extends ApiHandler {
     }
 
     @Override
-    protected Reply process(Context ctx, List<Path> inputs, Workspace workspace) {
+    protected Reply process(Params ctx, List<Path> inputs, Workspace workspace) {
         return new Reply.Files(splitter.split(inputs.getFirst(), strategy(ctx), workspace.out()),
                 stem(inputs.getFirst()) + "-split.zip");
     }
 
-    private static SplitStrategy strategy(Context ctx) {
+    private static SplitStrategy strategy(Params ctx) {
         String ranges = ctx.formParam("ranges");
         try {
             if (ranges != null && !ranges.isBlank()) {

@@ -1,5 +1,7 @@
 package com.docsmelt.pdf;
 
+import com.docsmelt.core.Progress;
+import com.docsmelt.io.Limits;
 import com.docsmelt.format.Format;
 import com.docsmelt.io.ConversionException;
 import com.docsmelt.io.PageRange;
@@ -44,6 +46,7 @@ public final class PdfImageExtractor {
             int selected = 0;
             for (int i = 0; i < total; i++) {
                 if (pages.includes(i + 1)) {
+                    Progress.step(i, total);
                     selected++;
                     run.page = i + 1;
                     run.counter = 0;
@@ -97,7 +100,8 @@ public final class PdfImageExtractor {
         }
 
         private void save(PDImageXObject image) {
-            if (image.getWidth() < MIN_SIDE || image.getHeight() < MIN_SIDE) {
+            if (image.getWidth() < MIN_SIDE || image.getHeight() < MIN_SIDE
+                    || !Limits.pixelsOk(image.getWidth(), image.getHeight())) {
                 return;
             }
             String base = String.format("%s-page%d-%d", stem, page, ++counter);
