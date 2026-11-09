@@ -45,6 +45,11 @@ final class EditHandler extends ApiHandler {
     }
 
     @Override
+    protected int requestsPerMinute(ServerConfig config) {
+        return tool == Tool.FIND_TEXT || tool == Tool.FORM_FIELDS ? lightweight(config) : config.requestsPerMinute();
+    }
+
+    @Override
     protected Reply process(Params ctx, List<Path> inputs, Workspace workspace) {
         Path pdf = inputs.getFirst();
         if (Format.fromPath(pdf) != Format.PDF) {

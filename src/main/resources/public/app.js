@@ -715,6 +715,7 @@ class ConvertPanel extends ToolPanel {
   /** Pick a sensible target until the user chooses one themselves. */
   filesChanged() {
     super.filesChanged();
+    if (!this.files.files.length) this.userPicked = false; // a fresh start gets the smart default again
     if (!this.select || this.userPicked || !this.files.files.length) return;
     const kinds = new Set(this.files.files.map((f) => ext(f.name)));
     this.select.value = kinds.size === 1 && kinds.has("pdf") ? "docx" : "pdf";

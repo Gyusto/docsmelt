@@ -13,7 +13,7 @@
   --accent: #2f76ea;
   --accent-2: #2aa898;
   --accent-soft: #eaf2ff;
-  --accent-text: #2f76ea;
+  --accent-text: #1d5fcf; /* ≥ 4.5:1 on --accent-soft (WCAG AA) */
   --danger: #c73a2a;
   --danger-soft: #fff0ee;
   --ok: #1d8a57;

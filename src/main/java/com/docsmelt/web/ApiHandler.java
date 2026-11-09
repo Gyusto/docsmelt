@@ -71,6 +71,19 @@ abstract class ApiHandler implements Handler {
         return 1;
     }
 
+    /**
+     * Requests per minute per IP for this endpoint. Lightweight endpoints used
+     * while you look around (page previews, find text, reading form fields)
+     * override this with a much higher allowance.
+     */
+    protected int requestsPerMinute(ServerConfig config) {
+        return config.requestsPerMinute();
+    }
+
+    static int lightweight(ServerConfig config) {
+        return config.requestsPerMinute() * 10;
+    }
+
     protected int maxFiles() {
         return config.maxFiles();
     }
@@ -82,7 +95,7 @@ abstract class ApiHandler implements Handler {
      */
     @Override
     public final void handle(Context ctx) throws Exception {
-        NaiveRateLimit.requestPerTimeUnit(ctx, config.requestsPerMinute(), TimeUnit.MINUTES);
+        NaiveRateLimit.requestPerTimeUnit(ctx, requestsPerMinute(config), TimeUnit.MINUTES);
         List<UploadedFile> uploads = ctx.uploadedFiles("files");
         validate(uploads);
         Params params = Params.of(ctx); // the job may outlive this request

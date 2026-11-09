@@ -7,7 +7,7 @@ FROM maven:3.9.9-eclipse-temurin-21 AS build
 # Tesseract lets the real-OCR test run too.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends fontconfig fonts-dejavu-core fonts-droid-fallback \
-      tesseract-ocr tesseract-ocr-eng \
+      tesseract-ocr tesseract-ocr-eng ghostscript \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
@@ -26,10 +26,10 @@ ARG OCR_LANGS="eng swa fra"
 
 # fontconfig/DejaVu: rendering Word/text pages to images.
 # Droid Sans Fallback: CJK characters in PDF output (wired up via DOCSMELT_FONTS).
-# Tesseract: OCR.
+# Tesseract: OCR. Ghostscript: PDF/A.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends fontconfig fonts-dejavu-core fonts-droid-fallback \
-      tesseract-ocr $(for l in $OCR_LANGS; do printf 'tesseract-ocr-%s ' "$l"; done) \
+      tesseract-ocr $(for l in $OCR_LANGS; do printf 'tesseract-ocr-%s ' "$l"; done) ghostscript \
  && rm -rf /var/lib/apt/lists/*
 
 ENV DOCSMELT_FONTS=/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf

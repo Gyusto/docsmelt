@@ -43,6 +43,11 @@ final class PreviewHandler extends ApiHandler {
     }
 
     @Override
+    protected int requestsPerMinute(ServerConfig config) {
+        return lightweight(config); // one request per page viewed or thumbnail shown
+    }
+
+    @Override
     protected Reply process(Params ctx, List<Path> inputs, Workspace workspace) {
         Path source = inputs.getFirst();
         Format format = Format.fromPath(source);
