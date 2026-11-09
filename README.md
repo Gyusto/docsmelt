@@ -1,8 +1,9 @@
-<p align="center">
-  <img src="docs/images/logo.svg" alt="DocSmelt logo" width="96" height="96">
-</p>
-
-<h1 align="center">DocSmelt</h1>
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo-dark.png">
+    <img src="docs/images/logo-light.png" alt="DocSmelt" width="380">
+  </picture>
+</h1>
 
 <p align="center">
   Convert, merge and split PDF, Word and image files, from a web page, the command line or Docker.<br>
