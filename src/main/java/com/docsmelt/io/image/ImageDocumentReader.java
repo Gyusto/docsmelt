@@ -17,7 +17,7 @@ public final class ImageDocumentReader implements DocumentReader {
     @Override
     public Document read(Path source, ReadOptions options) {
         try {
-            BufferedImage image = ImageIO.read(source.toFile());
+            BufferedImage image = com.docsmelt.io.image.ImageLoader.read(source);
             if (image == null) {
                 throw new ConversionException("Not a readable image: " + source);
             }

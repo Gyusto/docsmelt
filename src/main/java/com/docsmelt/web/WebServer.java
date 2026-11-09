@@ -37,6 +37,7 @@ import java.util.stream.Collectors;
  *   POST /api/unlock    multipart: files (1 PDF), password
  *   POST /api/number    multipart: files (1 PDF), position?, format?, start?, pages?, size?
  *   POST /api/sign      multipart: files (PDF + signature image), page?, x, y, width
+ *   POST /api/watermark, /api/extract-images, /api/crop: see PageToolsHandler
  * </pre>
  */
 public final class WebServer implements AutoCloseable {
@@ -69,7 +70,7 @@ public final class WebServer implements AutoCloseable {
         app.post("/api/convert", new ConvertHandler(config, slots, converter));
         app.post("/api/merge", new MergeHandler(config, slots, new PdfMerger(converter)));
         app.post("/api/split", new SplitHandler(config, slots, new PdfSplitter()));
-        app.post("/api/preview", new PreviewHandler(config, slots));
+        app.post("/api/preview", new PreviewHandler(config, slots, converter));
         app.post("/api/organize", new OrganizeHandler(config, slots));
         app.post("/api/compress", new CompressHandler(config, slots));
         app.post("/api/images-to-pdf", new ImagesHandler(config, slots));
@@ -78,6 +79,9 @@ public final class WebServer implements AutoCloseable {
         app.post("/api/unlock", new SecurityHandler(config, slots, SecurityHandler.Mode.UNLOCK));
         app.post("/api/number", new NumberHandler(config, slots));
         app.post("/api/sign", new SignHandler(config, slots));
+        app.post("/api/watermark", new PageToolsHandler(config, slots, PageToolsHandler.Tool.WATERMARK));
+        app.post("/api/extract-images", new PageToolsHandler(config, slots, PageToolsHandler.Tool.EXTRACT_IMAGES));
+        app.post("/api/crop", new PageToolsHandler(config, slots, PageToolsHandler.Tool.CROP));
 
         app.exception(ConversionException.class, (e, ctx) -> error(ctx, 400, e.getMessage()));
         app.exception(IllegalArgumentException.class, (e, ctx) -> error(ctx, 400, e.getMessage()));

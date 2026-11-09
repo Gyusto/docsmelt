@@ -99,17 +99,18 @@ public final class ImagesToPdf {
     }
 
     private static PDImageXObject load(PDDocument pdf, Path path, Format format) throws IOException {
-        if (format == Format.JPEG) {
+        if (format == Format.JPEG && com.docsmelt.io.image.ImageLoader.orientation(path) == 1) {
             try (InputStream in = Files.newInputStream(path)) {
                 return JPEGFactory.createFromStream(pdf, in); // original bytes, no quality loss
             } catch (IOException | RuntimeException e) {
                 // fall through: unusual JPEG variants are decoded and re-embedded below
             }
         }
-        BufferedImage img = ImageIO.read(path.toFile());
+        BufferedImage img = com.docsmelt.io.image.ImageLoader.read(path);
         if (img == null) {
             throw new ConversionException("Not a readable image: " + path.getFileName());
         }
-        return LosslessFactory.createFromImage(pdf, img);
+        // Rotated phone photos are re-encoded as high-quality JPEG; lossless would bloat them.
+        return format == Format.JPEG ? JPEGFactory.createFromImage(pdf, img, 0.92f) : LosslessFactory.createFromImage(pdf, img);
     }
 }

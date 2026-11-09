@@ -31,8 +31,11 @@ final class PreviewHandler extends ApiHandler {
     private static final int THUMB_WIDTH = 180;
     static final int MAX_PAGES = 300;
 
-    PreviewHandler(ServerConfig config, Semaphore slots) {
+    private final com.docsmelt.core.Converter converter;
+
+    PreviewHandler(ServerConfig config, Semaphore slots, com.docsmelt.core.Converter converter) {
         super(config, slots);
+        this.converter = converter;
     }
 
     @Override
@@ -43,8 +46,18 @@ final class PreviewHandler extends ApiHandler {
     @Override
     protected Reply process(Context ctx, List<Path> inputs, Workspace workspace) {
         Path source = inputs.getFirst();
-        if (Format.fromPath(source) != Format.PDF) {
-            throw new BadRequestResponse("Please choose a PDF file");
+        Format format = Format.fromPath(source);
+        if (format != Format.PDF) {
+            if (ctx.formParam("page") == null) {
+                throw new BadRequestResponse("Please choose a PDF file"); // page thumbnails (Organize) are PDF-only
+            }
+            if (!converter.registry().readableFormats().contains(format)) {
+                throw new BadRequestResponse("Can't preview ." + format.primaryExtension() + " files");
+            }
+            // Word, Excel, PowerPoint, text, images: preview what they'd look like as PDF.
+            Path asPdf = workspace.out().resolve("preview.pdf");
+            converter.convert(source, asPdf);
+            source = asPdf;
         }
         try (PDDocument pdf = Loader.loadPDF(source.toFile())) {
             int count = pdf.getNumberOfPages();

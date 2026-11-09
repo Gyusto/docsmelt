@@ -139,7 +139,7 @@ public final class OcrService {
 
     /** Re-encode images as PNG so the engine never sees an unusual format. */
     private static Path toPng(Path image, Path work) throws IOException {
-        BufferedImage img = ImageIO.read(image.toFile());
+        BufferedImage img = com.docsmelt.io.image.ImageLoader.read(image);
         if (img == null) {
             throw new ConversionException("Not a readable image: " + image.getFileName());
         }

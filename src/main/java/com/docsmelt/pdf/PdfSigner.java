@@ -89,7 +89,7 @@ public final class PdfSigner {
             throw new ConversionException("The signature must be an image (PNG with a transparent background works best)");
         }
         try {
-            BufferedImage img = ImageIO.read(signature.toFile());
+            BufferedImage img = com.docsmelt.io.image.ImageLoader.read(signature);
             if (img == null) {
                 throw new ConversionException("Not a readable image: " + signature.getFileName());
             }
