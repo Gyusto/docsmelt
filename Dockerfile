@@ -19,19 +19,19 @@ RUN --mount=type=cache,target=/root/.m2 mvn -B -q package
 FROM eclipse-temurin:21-jre-noble
 
 # fontconfig/DejaVu: rendering Word/text pages to images.
-# Droid Sans Fallback: CJK characters in PDF output (wired up via FILEKIT_FONTS).
+# Droid Sans Fallback: CJK characters in PDF output (wired up via DOCSMELT_FONTS).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends fontconfig fonts-dejavu-core fonts-droid-fallback \
  && rm -rf /var/lib/apt/lists/*
 
-ENV FILEKIT_FONTS=/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf
+ENV DOCSMELT_FONTS=/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf
 
-COPY --from=build /src/target/filekit.jar /app/filekit.jar
+COPY --from=build /src/target/docsmelt.jar /app/docsmelt.jar
 
-# CLI use: mount files here, e.g. docker run -v "$PWD:/work" filekit a.docx a.pdf
+# CLI use: mount files here, e.g. docker run -v "$PWD:/work" docsmelt a.docx a.pdf
 WORKDIR /work
 USER ubuntu
 EXPOSE 8080
-ENTRYPOINT ["java", "-Djava.awt.headless=true", "-XX:MaxRAMPercentage=75", "-jar", "/app/filekit.jar"]
+ENTRYPOINT ["java", "-Djava.awt.headless=true", "-XX:MaxRAMPercentage=75", "-jar", "/app/docsmelt.jar"]
 # Default: the web UI. Any arguments you pass replace this and run the CLI instead.
 CMD ["serve", "--host", "0.0.0.0", "--port", "8080"]

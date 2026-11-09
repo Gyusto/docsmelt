@@ -4,11 +4,11 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.filekit</groupId>
-    <artifactId>filekit</artifactId>
+    <groupId>com.docsmelt</groupId>
+    <artifactId>docsmelt</artifactId>
     <version>0.1.0</version>
     <packaging>jar</packaging>
-    <name>filekit</name>
+    <name>docsmelt</name>
     <description>Object-oriented PDF / Word / image converter</description>
 
     <properties>
@@ -69,7 +69,7 @@
     </dependencies>
 
     <build>
-        <finalName>filekit</finalName>
+        <finalName>docsmelt</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -84,7 +84,7 @@
                     <argLine>-Djava.awt.headless=true</argLine>
                 </configuration>
             </plugin>
-            <!-- Builds a single runnable jar: target/filekit.jar -->
+            <!-- Builds a single runnable jar: target/docsmelt.jar -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
@@ -97,7 +97,7 @@
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.filekit.cli.Main</mainClass>
+                                    <mainClass>com.docsmelt.cli.Main</mainClass>
                                     <manifestEntries>
                                         <Multi-Release>true</Multi-Release>
                                     </manifestEntries>

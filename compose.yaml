@@ -1,11 +1,12 @@
+name: docsmelt
 # docker compose up -d   →   http://localhost:8080
-# Port taken? FILEKIT_PORT=8090 docker compose up -d
+# Port taken? DOCSMELT_PORT=8090 docker compose up -d
 services:
-  filekit:
+  docsmelt:
     build: .
-    image: filekit:latest
+    image: docsmelt:latest
     ports:
-      - "127.0.0.1:${FILEKIT_PORT:-8080}:8080"   # drop "127.0.0.1:" to expose it to your network
+      - "127.0.0.1:${DOCSMELT_PORT:-8080}:8080"   # drop "127.0.0.1:" to expose it to your network
     command: ["serve", "--host", "0.0.0.0", "--port", "8080",
               "--max-upload-mb", "50", "--max-files", "20", "--rate-limit", "30"]
     restart: unless-stopped

@@ -1,31 +1,56 @@
-# filekit
+<p align="center">
+  <img src="docs/images/logo.svg" alt="DocSmelt logo" width="96" height="96">
+</p>
 
-Object-oriented PDF / Word / image converter and PDF toolkit in Java 21.
+<h1 align="center">DocSmelt</h1>
 
-Formats (read & write): `pdf`, `docx`, `txt`, `png`, `jpg/jpeg`, `bmp`, `gif`.
+<p align="center">
+  Convert, merge and split PDF, Word and image files, from a web page, the command line or Docker.<br>
+  Object-oriented Java 21. Self-hosted: files never leave your server.
+</p>
+
+<p align="center">
+  <img src="docs/images/convert.png" alt="DocSmelt web UI converting a Word file, a text file and an image to PDF" width="560">
+</p>
+
+## Features
+
+- **Convert** between `pdf`, `docx`, `txt`, `png`, `jpg/jpeg`, `bmp` and `gif`, one file or whole folders
+- **Merge** any mix of PDFs, Word files, text and images into one PDF
+- **Split** a PDF every N pages or by custom ranges
+- **Unicode PDFs**: Latin, Greek, Cyrillic built in; Chinese, Japanese, Korean via a fallback font
+- **Web UI** with drag and drop, plus a REST API, a CLI and a Docker image
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/merge.png" alt="Merging three files with reorder arrows" width="260"><br><b>Merge</b>: reorder, then combine</td>
+    <td align="center"><img src="docs/images/split.png" alt="Splitting a PDF by page ranges" width="260"><br><b>Split</b>: every N pages or ranges</td>
+    <td align="center"><img src="docs/images/mobile.png" alt="DocSmelt on a phone" width="170"><br><b>Mobile</b>-friendly</td>
+  </tr>
+</table>
 
 ## Usage
 
 ```bash
-mvn package                                    # builds target/filekit.jar (runs tests)
-alias filekit='java -jar target/filekit.jar'
+mvn package                                    # builds target/docsmelt.jar (runs tests)
+alias docsmelt='java -jar target/docsmelt.jar'
 
 # Convert
-filekit report.docx report.pdf
-filekit slides.pdf page.png --dpi 300          # multi-page → page-1.png, page-2.png, ...
-filekit scan.pdf cover.jpg --pages 1 -q 80     # page selection, JPEG quality
+docsmelt report.docx report.pdf
+docsmelt slides.pdf page.png --dpi 300          # multi-page → page-1.png, page-2.png, ...
+docsmelt scan.pdf cover.jpg --pages 1 -q 80     # page selection, JPEG quality
 
 # Batch (files and folders; folder inputs skip files of other types)
-filekit --to pdf docs/ notes.txt -o out/ -r -j 4
+docsmelt --to pdf docs/ notes.txt -o out/ -r -j 4
 
 # PDF tools
-filekit merge cover.jpg report.docx appendix.pdf -o book.pdf   # non-PDFs converted automatically
-filekit split book.pdf                         # one file per page
-filekit split book.pdf --every 10 -o parts/
-filekit split book.pdf --ranges 1-3,4-9,10-    # one file per range
-filekit split book.pdf --ranges 5-7            # extract pages
+docsmelt merge cover.jpg report.docx appendix.pdf -o book.pdf   # non-PDFs converted automatically
+docsmelt split book.pdf                         # one file per page
+docsmelt split book.pdf --every 10 -o parts/
+docsmelt split book.pdf --ranges 1-3,4-9,10-    # one file per range
+docsmelt split book.pdf --ranges 5-7            # extract pages
 
-filekit --help | filekit merge --help | filekit split --help
+docsmelt --help | docsmelt merge --help | docsmelt split --help
 ```
 
 Exit codes: `0` ok, `1` conversion failed, `2` bad usage.
@@ -36,9 +61,9 @@ PDF output embeds DejaVu Sans (Latin, Greek, Cyrillic and many symbols). For
 other scripts such as Chinese, Japanese or Korean, add a TrueType fallback font:
 
 ```bash
-filekit notes.txt notes.pdf --font /usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf
+docsmelt notes.txt notes.pdf --font /usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf
 # or once for all runs:
-export FILEKIT_FONTS=/path/a.ttf:/path/b.ttf
+export DOCSMELT_FONTS=/path/a.ttf:/path/b.ttf
 ```
 
 Only `.ttf` fonts with TrueType outlines work (PDFBox limitation; `.ttc`/CFF `.otf` don't).
@@ -47,8 +72,8 @@ Characters no font covers (e.g. colour emoji) become `?`.
 ## Web UI
 
 ```bash
-filekit serve                    # http://127.0.0.1:8080 (this computer only)
-filekit serve --host 0.0.0.0     # reachable from your network
+docsmelt serve                    # http://127.0.0.1:8080 (this computer only)
+docsmelt serve --host 0.0.0.0     # reachable from your network
 ```
 
 A single page with Convert, Merge PDF and Split PDF tabs, drag and drop, and
@@ -75,12 +100,12 @@ Errors are JSON: `{"error": "..."}` with status 400, 429 or 503.
 
 ```bash
 docker compose up -d             # web UI on http://localhost:8080
-FILEKIT_PORT=8090 docker compose up -d   # if 8080 is taken
+DOCSMELT_PORT=8090 docker compose up -d   # if 8080 is taken
 
 # or the CLI, without the web UI:
-docker build -t filekit .
-docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/work" filekit report.docx report.pdf
-docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/work" filekit merge a.pdf b.pdf -o all.pdf
+docker build -t docsmelt .
+docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/work" docsmelt report.docx report.pdf
+docker run --rm -u "$(id -u):$(id -g)" -v "$PWD:/work" docsmelt merge a.pdf b.pdf -o all.pdf
 ```
 
 The image runs the test suite during build and ships with a CJK fallback font
@@ -113,4 +138,4 @@ Reader ──► Document (pages → blocks) ──► Writer
 
 - PDF → Word extracts text and images, not layout, fonts or exact positions.
 - Word tables are flattened to `cell | cell` lines; EMF/WMF images are skipped.
-- Word → image uses filekit's own simple layout, not Word's.
+- Word → image uses docsmelt's own simple layout, not Word's.
