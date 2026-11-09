@@ -4,6 +4,8 @@ import com.docsmelt.model.Block;
 import com.docsmelt.model.ImageBlock;
 import com.docsmelt.model.Page;
 import com.docsmelt.model.Paragraph;
+import com.docsmelt.model.Table;
+import com.docsmelt.io.TableLayout;
 
 import java.awt.Color;
 import java.awt.Font;
@@ -51,6 +53,7 @@ public final class PageRasterizer {
             switch (block) {
                 case Paragraph p -> canvas.paragraph(p);
                 case ImageBlock img -> canvas.image(img);
+                case Table t -> canvas.table(t);
             }
         }
         return canvas.finish();
@@ -109,12 +112,89 @@ public final class PageRasterizer {
             y += h + paragraphGap;
         }
 
+        /** Grid with a shaded header row, repeated when the table continues on a new sheet. */
+        void table(Table table) {
+            if (table.isEmpty()) {
+                return;
+            }
+            Font cellFont = body.deriveFont(body.getSize2D() * 0.8f);
+            Font headFont = cellFont.deriveFont(Font.BOLD);
+            g.setFont(cellFont);
+            FontMetrics fm = g.getFontMetrics();
+            int pad = Math.max(4, cellFont.getSize() / 3);
+            FontMetrics boldMetrics = g.getFontMetrics(headFont); // wider face: header cells never break mid-word
+            float[] widths = TableLayout.columnWidths(table, boldMetrics::stringWidth, contentWidth, pad);
+            int lineHeight = (int) (fm.getHeight() * 1.15);
+            for (int r = 0; r < table.rowCount(); r++) {
+                boolean header = table.header() && r == 0;
+                List<List<String>> cells = wrapRow(table, r, widths, pad, fm);
+                int rowHeight = rowHeight(cells, lineHeight, pad);
+                if (y + rowHeight > height - margin && y > margin) {
+                    newSheet();
+                    if (table.header() && r > 0) {
+                        List<List<String>> head = wrapRow(table, 0, widths, pad, fm);
+                        drawRow(head, widths, rowHeight(head, lineHeight, pad), lineHeight, pad, headFont, true);
+                    }
+                }
+                drawRow(cells, widths, Math.min(rowHeight, contentHeight), lineHeight, pad, header ? headFont : cellFont, header);
+            }
+            y += paragraphGap * 2;
+        }
+
+        private List<List<String>> wrapRow(Table table, int r, float[] widths, int pad, FontMetrics fm) {
+            List<List<String>> cells = new ArrayList<>();
+            for (int c = 0; c < widths.length; c++) {
+                cells.add(wrap(table.cell(r, c), fm, (int) widths[c] - 2 * pad));
+            }
+            return cells;
+        }
+
+        private static int rowHeight(List<List<String>> cells, int lineHeight, int pad) {
+            return Math.max(1, cells.stream().mapToInt(List::size).max().orElse(1)) * lineHeight + 2 * pad;
+        }
+
+        private void drawRow(List<List<String>> cells, float[] widths, int rowHeight, int lineHeight, int pad,
+                             Font font, boolean header) {
+            int x = margin;
+            int total = 0;
+            for (float w : widths) {
+                total += Math.round(w);
+            }
+            if (header) {
+                g.setColor(new Color(0xEEF3FB));
+                g.fillRect(margin, y, total, rowHeight);
+            }
+            g.setFont(font);
+            FontMetrics fm = g.getFontMetrics();
+            for (int c = 0; c < widths.length; c++) {
+                int w = Math.round(widths[c]);
+                g.setColor(Color.BLACK);
+                int lineY = y + pad + fm.getAscent();
+                for (String line : cells.get(c)) {
+                    if (lineY > y + rowHeight) {
+                        break;
+                    }
+                    g.drawString(line, x + pad, lineY);
+                    lineY += lineHeight;
+                }
+                g.setColor(new Color(0xC9D3E0));
+                g.drawRect(x, y, w, rowHeight);
+                x += w;
+            }
+            g.setColor(Color.BLACK);
+            y += rowHeight;
+        }
+
         private List<String> wrap(String text, FontMetrics fm) {
+            return wrap(text, fm, contentWidth);
+        }
+
+        private List<String> wrap(String text, FontMetrics fm, int maxWidth) {
             List<String> lines = new ArrayList<>();
             StringBuilder line = new StringBuilder();
             for (String word : text.split("\\s+")) {
                 String candidate = line.isEmpty() ? word : line + " " + word;
-                if (fm.stringWidth(candidate) <= contentWidth || line.isEmpty()) {
+                if (fm.stringWidth(candidate) <= maxWidth || line.isEmpty()) {
                     line.setLength(0);
                     line.append(candidate);
                 } else {

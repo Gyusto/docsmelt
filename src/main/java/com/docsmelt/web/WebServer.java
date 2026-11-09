@@ -33,6 +33,10 @@ import java.util.stream.Collectors;
  *   POST /api/compress  multipart: files[] (PDFs), level?
  *   POST /api/images-to-pdf  multipart: files[] (images), pageSize?, margin?
  *   POST /api/ocr       multipart: files (1 PDF/image), lang?, output?, pages?
+ *   POST /api/protect   multipart: files (1 PDF), password, allowPrint?, allowCopy?, allowEdit?
+ *   POST /api/unlock    multipart: files (1 PDF), password
+ *   POST /api/number    multipart: files (1 PDF), position?, format?, start?, pages?, size?
+ *   POST /api/sign      multipart: files (PDF + signature image), page?, x, y, width
  * </pre>
  */
 public final class WebServer implements AutoCloseable {
@@ -70,6 +74,10 @@ public final class WebServer implements AutoCloseable {
         app.post("/api/compress", new CompressHandler(config, slots));
         app.post("/api/images-to-pdf", new ImagesHandler(config, slots));
         app.post("/api/ocr", new OcrHandler(config, slots, ocr));
+        app.post("/api/protect", new SecurityHandler(config, slots, SecurityHandler.Mode.PROTECT));
+        app.post("/api/unlock", new SecurityHandler(config, slots, SecurityHandler.Mode.UNLOCK));
+        app.post("/api/number", new NumberHandler(config, slots));
+        app.post("/api/sign", new SignHandler(config, slots));
 
         app.exception(ConversionException.class, (e, ctx) -> error(ctx, 400, e.getMessage()));
         app.exception(IllegalArgumentException.class, (e, ctx) -> error(ctx, 400, e.getMessage()));

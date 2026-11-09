@@ -49,6 +49,8 @@ public final class PdfDocumentReader implements DocumentReader {
             }
             options.pages().requireAny(document.pages().size(), total);
             return document;
+        } catch (org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException e) {
+            throw new ConversionException(source.getFileName() + " is password-protected; unlock it first", e);
         } catch (IOException e) {
             throw new ConversionException("Could not read PDF " + source + ": " + e.getMessage(), e);
         }

@@ -8,6 +8,7 @@ import com.docsmelt.model.Document;
 import com.docsmelt.model.ImageBlock;
 import com.docsmelt.model.Page;
 import com.docsmelt.model.Paragraph;
+import com.docsmelt.model.Table;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -29,6 +30,8 @@ public final class TextDocumentWriter implements DocumentWriter {
                     case Paragraph p when p.isHeading() -> "# " + p.text();
                     case Paragraph p -> p.text();
                     case ImageBlock img -> "[image " + img.width() + "x" + img.height() + "]";
+                    case Table t -> t.rows().stream().map(r -> String.join(" | ", r))
+                            .collect(java.util.stream.Collectors.joining("\n"));
                 });
             }
             pages.add(String.join("\n\n", parts));

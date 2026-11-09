@@ -9,6 +9,10 @@ import java.util.Locale;
 public enum Format {
     PDF(Kind.DOCUMENT, "pdf"),
     DOCX(Kind.DOCUMENT, "docx"),
+    XLSX(Kind.DOCUMENT, "xlsx"),
+    /** Legacy Excel 97–2003; read-only. */
+    XLS(Kind.DOCUMENT, "xls"),
+    PPTX(Kind.DOCUMENT, "pptx"),
     TXT(Kind.DOCUMENT, "txt"),
     PNG(Kind.IMAGE, "png"),
     JPEG(Kind.IMAGE, "jpg", "jpeg"),

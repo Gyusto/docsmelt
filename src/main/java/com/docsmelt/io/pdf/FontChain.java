@@ -22,12 +22,12 @@ import java.util.Map;
  *
  * <p>Fonts are embedded as subsets, so only the glyphs actually used end up in the PDF.
  */
-final class FontChain {
+public final class FontChain {
 
     /** Extra fallback fonts, separated by the platform path separator (':' on Linux). */
     static final String FONTS_ENV = "DOCSMELT_FONTS";
 
-    record Run(PDFont font, String text) {
+    public record Run(PDFont font, String text) {
     }
 
     private final List<PDFont> fonts;
@@ -37,11 +37,11 @@ final class FontChain {
         this.fonts = fonts;
     }
 
-    static FontChain regular(PDDocument pdf, List<Path> extraFonts) {
+    public static FontChain regular(PDDocument pdf, List<Path> extraFonts) {
         return load(pdf, "/fonts/DejaVuSans.ttf", extraFonts);
     }
 
-    static FontChain bold(PDDocument pdf, List<Path> extraFonts) {
+    public static FontChain bold(PDDocument pdf, List<Path> extraFonts) {
         return load(pdf, "/fonts/DejaVuSans-Bold.ttf", extraFonts);
     }
 
@@ -87,7 +87,7 @@ final class FontChain {
     }
 
     /** Splits text into consecutive runs sharing a font. Unsupported characters become '?'. */
-    List<Run> runs(String text) {
+    public List<Run> runs(String text) {
         List<Run> runs = new ArrayList<>();
         PDFont current = null;
         StringBuilder buf = new StringBuilder();
@@ -112,7 +112,7 @@ final class FontChain {
         return runs;
     }
 
-    float width(String text, float fontSize) throws IOException {
+    public float width(String text, float fontSize) throws IOException {
         float total = 0;
         for (Run run : runs(text)) {
             total += run.font().getStringWidth(run.text()) / 1000f * fontSize;

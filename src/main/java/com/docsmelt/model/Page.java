@@ -16,8 +16,27 @@ import java.util.Optional;
  */
 public final class Page {
 
+    /** Physical size of a fixed-layout page (e.g. a slide), in PDF points. */
+    public record Size(float widthPt, float heightPt) {
+    }
+
     private final List<Block> blocks = new ArrayList<>();
     private BufferedImage snapshot;
+    private Size fixedSize;
+
+    /**
+     * Marks this page as fixed-layout: its {@link #snapshot()} <em>is</em> the
+     * page (slides), so PDF output draws the snapshot at this size instead of
+     * re-flowing the blocks. Blocks are still used for text-based outputs.
+     */
+    public Page withFixedSize(Size size) {
+        this.fixedSize = size;
+        return this;
+    }
+
+    public Optional<Size> fixedSize() {
+        return Optional.ofNullable(fixedSize);
+    }
 
     public Page add(Block block) {
         blocks.add(block);

@@ -64,6 +64,7 @@ const FILE_ICONS = {
   pdf: ["file-pdf", "pdf"], docx: ["file-word", "word"], txt: ["file-lines", "text"],
   png: ["file-image", "image"], jpg: ["file-image", "image"], jpeg: ["file-image", "image"],
   bmp: ["file-image", "image"], gif: ["file-image", "image"],
+  xlsx: ["file-excel", "excel"], xls: ["file-excel", "excel"], pptx: ["file-powerpoint", "powerpoint"],
 };
 const fileIcon = (name) => {
   const [glyph, kind] = FILE_ICONS[ext(name)] ?? ["file", "other"];
@@ -198,6 +199,7 @@ class ToolPanel {
   busyText() { return "Uploading…"; }
   processingText() { return "Processing…"; }
   fillForm(_form) {}
+  async prepare() {}
   validate() { return null; }
   summary(_result) { return null; }
   filesChanged() { this.refresh(); }
@@ -240,14 +242,14 @@ class ToolPanel {
       ?? (this.files.files.length > this.info.maxFiles ? `At most ${this.info.maxFiles} files at once` : null);
     if (problem) { this.status.error(problem); return; }
 
-    const form = new FormData();
-    this.files.files.forEach((f) => form.append("files", f, f.name));
-    this.fillForm(form);
-
     this.busy = true;
     this.refresh();
     this.status.busy(this.busyText());
     try {
+      await this.prepare();
+      const form = new FormData();
+      this.files.files.forEach((f) => form.append("files", f, f.name));
+      this.fillForm(form);
       const result = await this.api.send(this.endpoint(), form, (p) => this.status.progress(p, this.processingText()));
       this.status.done(result, this.summary(result));
     } catch (err) {
@@ -263,7 +265,8 @@ class ConvertPanel extends ToolPanel {
   constructor(section, api, info) {
     super(section, api, info, { accept: info.read.map((e) => `.${e}`).join(",") });
     this.select = this.field("to");
-    const names = { pdf: "PDF", docx: "Word (.docx)", txt: "Text (.txt)", png: "PNG image", jpg: "JPEG image", bmp: "BMP image", gif: "GIF image" };
+    const names = { pdf: "PDF", docx: "Word (.docx)", xlsx: "Excel (.xlsx)", pptx: "PowerPoint (.pptx)",
+      txt: "Text (.txt)", png: "PNG image", jpg: "JPEG image", bmp: "BMP image", gif: "GIF image" };
     info.write.filter((f) => f !== "jpeg").forEach((f) =>
       this.select.append(el("option", { value: f, textContent: names[f] ?? f.toUpperCase() })));
     this.userPicked = false;
@@ -540,6 +543,376 @@ class OrganizePanel extends ToolPanel {
   }
 }
 
+class ProtectPanel extends ToolPanel {
+  constructor(section, api, info) {
+    super(section, api, info, { single: true, accept: ".pdf,application/pdf" });
+    section.querySelectorAll("[name=secMode]").forEach((r) => r.addEventListener("change", () => this.applyMode()));
+    const reveal = section.querySelector("[data-reveal]");
+    reveal.addEventListener("click", () => {
+      const show = this.field("password").type === "password";
+      ["password", "confirm"].forEach((n) => { this.field(n).type = show ? "text" : "password"; });
+      reveal.replaceChildren(icon(show ? "eye-slash" : "eye"));
+      reveal.setAttribute("aria-label", show ? "Hide password" : "Show password");
+    });
+    this.applyMode();
+  }
+
+  mode() { return this.section.querySelector("[name=secMode]:checked").value; }
+
+  applyMode() {
+    const protect = this.mode() === "protect";
+    this.section.querySelectorAll("[data-protect-only]").forEach((e) => { e.hidden = !protect; });
+    this.section.querySelector("[data-label]").textContent = protect ? "Protect PDF" : "Remove password";
+    this.field("password").autocomplete = protect ? "new-password" : "current-password";
+    this.status.clear();
+  }
+
+  endpoint() { return this.mode() === "protect" ? "api/protect" : "api/unlock"; }
+  processingText() { return this.mode() === "protect" ? "Encrypting…" : "Unlocking…"; }
+
+  validate() {
+    const pdf = this.requireExt(["pdf"], "Please choose a PDF file");
+    if (pdf) return pdf;
+    const pw = this.field("password").value;
+    if (pw.length < 4) return "The password must be at least 4 characters";
+    if (this.mode() === "protect" && pw !== this.field("confirm").value) return "The passwords don't match";
+    return null;
+  }
+
+  fillForm(form) {
+    form.append("password", this.field("password").value);
+    if (this.mode() === "protect") {
+      ["allowPrint", "allowCopy", "allowEdit"].forEach((n) => form.append(n, String(this.field(n).checked)));
+    }
+  }
+
+  summary() {
+    const protect = this.mode() === "protect";
+    ["password", "confirm"].forEach((n) => { this.field(n).value = ""; }); // don't leave it on screen
+    return protect ? "Protected with AES-256." : "Password removed.";
+  }
+}
+
+class NumberPanel extends ToolPanel {
+  constructor(section, api, info) { super(section, api, info, { single: true, accept: ".pdf,application/pdf" }); }
+  endpoint() { return "api/number"; }
+  validate() { return this.requireExt(["pdf"], "Please choose a PDF file"); }
+
+  fillForm(form) {
+    form.append("position", this.section.querySelector("[name=position]:checked").value);
+    ["format", "size", "start"].forEach((n) => form.append(n, this.field(n).value));
+    if (this.field("skipFirst").checked) form.append("pages", "2-");
+  }
+}
+
+/** Freehand drawing on a canvas; strokes are kept so the pad can be redrawn when resized. */
+class SignaturePad {
+  constructor(canvas, onChange) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d", { willReadFrequently: true });
+    this.strokes = [];
+    this.onChange = onChange;
+    canvas.addEventListener("pointerdown", (e) => {
+      canvas.setPointerCapture(e.pointerId);
+      this.current = [this.point(e)];
+      this.strokes.push(this.current);
+      this.redraw();
+    });
+    canvas.addEventListener("pointermove", (e) => {
+      if (!this.current) return;
+      this.current.push(this.point(e));
+      this.redraw();
+    });
+    const end = () => { if (this.current) { this.current = null; this.onChange(); } };
+    canvas.addEventListener("pointerup", end);
+    canvas.addEventListener("pointercancel", end);
+    new ResizeObserver(() => this.redraw()).observe(canvas);
+  }
+
+  point(e) {
+    const r = this.canvas.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
+  }
+
+  get empty() { return !this.strokes.some((s) => s.length); }
+
+  clear() {
+    this.strokes = [];
+    this.redraw();
+    this.onChange();
+  }
+
+  redraw() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = this.canvas.clientWidth;
+    const h = this.canvas.clientHeight;
+    if (!w) return;
+    if (this.canvas.width !== Math.round(w * dpr)) {
+      this.canvas.width = Math.round(w * dpr);
+      this.canvas.height = Math.round(h * dpr);
+    }
+    const c = this.ctx;
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, w, h);
+    c.strokeStyle = "#1d2b4f";
+    c.lineWidth = 2.6;
+    c.lineCap = c.lineJoin = "round";
+    for (const stroke of this.strokes) {
+      c.beginPath();
+      stroke.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y)));
+      if (stroke.length === 1) c.lineTo(stroke[0][0] + 0.1, stroke[0][1]); // a dot
+      c.stroke();
+    }
+    this.canvas.parentElement.classList.toggle("has-ink", !this.empty);
+  }
+}
+
+/** Crops a canvas to its visible pixels (plus a little padding); null if it's blank. */
+function trimCanvas(source) {
+  const { width, height } = source;
+  if (!width || !height) return null;
+  const data = source.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, width, height).data;
+  let x0 = width, y0 = height, x1 = -1, y1 = -1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (data[(y * width + x) * 4 + 3] > 8) {
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+    }
+  }
+  if (x1 < 0) return null;
+  const pad = 6;
+  x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad);
+  x1 = Math.min(width - 1, x1 + pad); y1 = Math.min(height - 1, y1 + pad);
+  const out = el("canvas", { width: x1 - x0 + 1, height: y1 - y0 + 1 });
+  out.getContext("2d").drawImage(source, x0, y0, out.width, out.height, 0, 0, out.width, out.height);
+  return out;
+}
+
+class SignPanel extends ToolPanel {
+  constructor(section, api, info) {
+    super(section, api, info, { single: true, accept: ".pdf,application/pdf" });
+    this.place = section.querySelector(".sign-place");
+    this.stage = section.querySelector(".sign-stage");
+    this.pageImg = section.querySelector(".sign-page-img");
+    this.box = section.querySelector(".sig-box");
+    this.preview = section.querySelector(".sig-preview");
+    this.pageSelect = this.field("signPage");
+    this.pos = { x: 0.55, y: 0.8, w: 0.3 };
+    this.aspect = 1 / 3;
+    this.loadToken = 0;
+
+    this.pad = new SignaturePad(section.querySelector(".sig-canvas"), () => this.updateSignature());
+    section.querySelector(".sig-clear").addEventListener("click", () => this.pad.clear());
+    section.querySelectorAll("[name=sigMode]").forEach((r) => r.addEventListener("change", () => {
+      section.querySelectorAll("[data-sig]").forEach((d) => { d.hidden = d.dataset.sig !== this.sigMode(); });
+      this.pad.redraw();
+      this.updateSignature();
+    }));
+    this.field("sigText").addEventListener("input", () => this.updateSignature());
+    this.field("sigFile").addEventListener("change", (e) => this.loadUploaded(e.target.files[0]));
+    this.pageSelect.addEventListener("change", () => this.loadPage(Number(this.pageSelect.value)));
+    this.wireBox();
+    new ResizeObserver(() => this.layoutBox()).observe(this.stage);
+  }
+
+  sigMode() { return this.section.querySelector("[name=sigMode]:checked").value; }
+  endpoint() { return "api/sign"; }
+  processingText() { return "Signing…"; }
+  ready() { return (this.files?.files.length ?? 0) === 1 && !!this.pageLoaded && !!this.sigCanvas; }
+
+  validate() {
+    if (!this.sigCanvas) return "Add your signature first";
+    if (!this.pageLoaded) return "Wait for the page to load";
+    return null;
+  }
+
+  async prepare() {
+    this.sigBlob = await new Promise((resolve) => this.sigCanvas.toBlob(resolve, "image/png"));
+  }
+
+  fillForm(form) {
+    form.append("files", this.sigBlob, "signature.png");
+    form.append("page", String(this.page));
+    form.append("x", this.pos.x.toFixed(4));
+    form.append("y", this.pos.y.toFixed(4));
+    form.append("width", this.pos.w.toFixed(4));
+  }
+
+  /* --- signature sources --- */
+
+  currentSignature() {
+    switch (this.sigMode()) {
+      case "draw": return this.pad.empty ? null : trimCanvas(this.pad.canvas);
+      case "type": {
+        const text = this.field("sigText").value.trim();
+        if (!text) return null;
+        const c = el("canvas", { width: 10, height: 10 });
+        const g = c.getContext("2d", { willReadFrequently: true });
+        const font = 'italic 96px "Segoe Script", "Brush Script MT", "Snell Roundhand", "URW Chancery L", cursive';
+        g.font = font;
+        c.width = Math.ceil(g.measureText(text).width) + 60;
+        c.height = 160;
+        g.font = font;
+        g.fillStyle = "#1d2b4f";
+        g.textBaseline = "middle";
+        g.fillText(text, 30, 80);
+        return trimCanvas(c);
+      }
+      default: return this.uploaded ?? null;
+    }
+  }
+
+  async loadUploaded(file) {
+    if (!file) return;
+    try {
+      const bitmap = await createImageBitmap(file);
+      const scale = Math.min(1, 1500 / Math.max(bitmap.width, bitmap.height));
+      const c = el("canvas", { width: Math.round(bitmap.width * scale), height: Math.round(bitmap.height * scale) });
+      const g = c.getContext("2d", { willReadFrequently: true });
+      g.drawImage(bitmap, 0, 0, c.width, c.height);
+      // Make a white/paper background transparent, so photographed signatures sit on the page.
+      const img = g.getImageData(0, 0, c.width, c.height);
+      for (let i = 0; i < img.data.length; i += 4) {
+        const [r, gr, b] = [img.data[i], img.data[i + 1], img.data[i + 2]];
+        if (r > 225 && gr > 225 && b > 225) img.data[i + 3] = 0;
+      }
+      g.putImageData(img, 0, 0);
+      this.uploaded = trimCanvas(c) ?? c;
+    } catch {
+      this.uploaded = null;
+      this.status.error("Couldn't read that image");
+    }
+    this.updateSignature();
+  }
+
+  updateSignature() {
+    const c = this.currentSignature();
+    this.sigCanvas = c;
+    if (c) {
+      this.aspect = c.height / c.width;
+      this.preview.src = c.toDataURL("image/png");
+    } else {
+      this.aspect = 1 / 3;
+      this.preview.removeAttribute("src");
+    }
+    this.box.classList.toggle("has-sig", !!c);
+    this.layoutBox();
+    this.refresh();
+  }
+
+  /* --- page preview --- */
+
+  async filesChanged() {
+    this.pageLoaded = false;
+    this.place.hidden = true;
+    this.refresh();
+    const file = this.files.files[0];
+    if (!file) return;
+    if (ext(file.name) !== "pdf") { this.status.error("Please choose a PDF file"); return; }
+    this.pageSelect.replaceChildren();
+    await this.loadPage(0); // last page: where signatures usually go
+  }
+
+  async loadPage(page) {
+    const token = ++this.loadToken;
+    const file = this.files.files[0];
+    const form = new FormData();
+    form.append("files", file, file.name);
+    form.append("page", String(page));
+    form.append("width", String(Math.min(1100, Math.round(520 * (window.devicePixelRatio || 1)))));
+    this.status.busy("Loading page…");
+    try {
+      const { blob } = await this.api.send("api/preview", form, (p) => this.status.progress(p, "Rendering page…"));
+      if (token !== this.loadToken) return;
+      const data = JSON.parse(await blob.text());
+      if (this.pageSelect.options.length !== data.count) {
+        this.pageSelect.replaceChildren(...Array.from({ length: data.count }, (_, i) =>
+          el("option", { value: String(i + 1), textContent: `Page ${i + 1} of ${data.count}` })));
+      }
+      this.pageSelect.value = String(data.page);
+      this.page = data.page;
+      this.pageImg.src = data.pages[0].src;
+      await this.pageImg.decode().catch(() => {});
+      this.place.hidden = false;
+      this.pageLoaded = true;
+      this.status.clear();
+      this.layoutBox();
+    } catch (err) {
+      if (token === this.loadToken) this.status.error(err.message);
+    }
+    this.refresh();
+  }
+
+  /* --- placing the signature --- */
+
+  layoutBox() {
+    const W = this.stage.clientWidth;
+    const H = this.stage.clientHeight;
+    if (!W || !H) return;
+    const p = this.pos;
+    const maxW = Math.min(1, (H / W) / this.aspect); // the box must fit vertically too
+    p.w = Math.min(Math.max(p.w, 0.05), maxW);
+    const hFrac = (p.w * W * this.aspect) / H;
+    p.x = Math.min(Math.max(p.x, 0), 1 - p.w);
+    p.y = Math.min(Math.max(p.y, 0), 1 - hFrac);
+    Object.assign(this.box.style, {
+      left: `${p.x * W}px`, top: `${p.y * H}px`, width: `${p.w * W}px`, height: `${hFrac * H}px`,
+    });
+  }
+
+  wireBox() {
+    const handle = this.box.querySelector(".sig-handle");
+    let drag = null;
+    const start = (e, mode) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.target.setPointerCapture(e.pointerId);
+      drag = { mode, px: e.clientX, py: e.clientY, ...this.pos };
+      this.box.focus({ preventScroll: true });
+    };
+    const move = (e) => {
+      if (!drag) return;
+      const W = this.stage.clientWidth;
+      const H = this.stage.clientHeight;
+      if (drag.mode === "move") {
+        this.pos.x = drag.x + (e.clientX - drag.px) / W;
+        this.pos.y = drag.y + (e.clientY - drag.py) / H;
+      } else {
+        this.pos.w = drag.w + (e.clientX - drag.px) / W;
+      }
+      this.layoutBox();
+    };
+    const end = () => { drag = null; };
+    this.box.addEventListener("pointerdown", (e) => start(e, "move"));
+    handle.addEventListener("pointerdown", (e) => start(e, "resize"));
+    [this.box, handle].forEach((t) => {
+      t.addEventListener("pointermove", move);
+      t.addEventListener("pointerup", end);
+      t.addEventListener("pointercancel", end);
+    });
+    this.box.addEventListener("keydown", (e) => {
+      const step = e.shiftKey ? 0.05 : 0.01;
+      const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+      if (moves[e.key]) {
+        this.pos.x += moves[e.key][0];
+        this.pos.y += moves[e.key][1];
+      } else if (e.key === "+" || e.key === "=") {
+        this.pos.w += 0.02;
+      } else if (e.key === "-") {
+        this.pos.w -= 0.02;
+      } else {
+        return;
+      }
+      e.preventDefault();
+      this.layoutBox();
+    });
+  }
+}
+
 /* ---------- Tabs ------------------------------------------------------------ */
 
 class Tabs {
@@ -579,6 +952,7 @@ class Tabs {
     const panels = {
       convert: ConvertPanel, merge: MergePanel, split: SplitPanel, organize: OrganizePanel,
       compress: CompressPanel, images: ImagesPanel, ocr: OcrPanel,
+      protect: ProtectPanel, number: NumberPanel, sign: SignPanel,
     };
     Object.entries(panels).forEach(([id, Panel]) => new Panel(document.getElementById(`panel-${id}`), api, info));
     document.getElementById("limits").textContent = `Up to ${info.maxFiles} files, ${info.maxUploadMb} MB each.`;

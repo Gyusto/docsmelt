@@ -49,8 +49,8 @@ body {
 
 /* Tool bar: 7 tools, icon above label; scrolls sideways on narrow screens */
 .tabs {
-  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(78px, 1fr); gap: 4px;
-  padding: 5px; margin-bottom: 16px; overflow-x: auto; scrollbar-width: thin;
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;
+  padding: 5px; margin-bottom: 16px;
   background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
 }
 .tabs button {
@@ -63,10 +63,7 @@ body {
 .tabs button:hover { color: var(--accent); }
 .tabs button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); }
 .tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-/* Phones: two rows so every tool is visible without sideways scrolling */
-@media (max-width: 600px) {
-  .tabs { grid-auto-flow: row; grid-template-columns: repeat(4, 1fr); overflow: visible; }
-}
+@media (max-width: 420px) { .tabs button { font-size: .74rem; padding: 8px 2px; } }
 
 .card {
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
@@ -92,7 +89,11 @@ body {
 .dz-title u { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .dz-hint { color: var(--muted); font-size: .9rem; }
 
-.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* Screen-reader only. !important so component rules (e.g. legend widths) can't make it visible or wide. */
+.visually-hidden {
+  position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important;
+  margin: -1px !important; overflow: hidden !important; clip: rect(0 0 0 0) !important; white-space: nowrap !important; border: 0 !important;
+}
 
 /* File list */
 .files { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
@@ -106,6 +107,8 @@ body {
 .file-icon.word { color: #3f86f5; }
 .file-icon.image { color: #22b3a0; }
 .file-icon.text, .file-icon.other { color: #8a94a3; }
+.file-icon.excel { color: #1d8a57; }
+.file-icon.powerpoint { color: #e0702f; }
 .files .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .files .size { flex: none; color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; }
 .icon-btn {
@@ -148,7 +151,8 @@ input[type="radio"] { accent-color: var(--accent); }
 /* Two/three simple fields side by side */
 .grid.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
 .grid.two label { display: grid; gap: 4px; font-weight: 600; font-size: .9rem; }
-.grid.two select, .grid.two input { width: 100%; font-weight: 400; }
+.grid.two select, .grid.two input:not([type="checkbox"]):not([type="radio"]) { width: 100%; font-weight: 400; }
+.grid.two .check-inline { font-weight: 400; }
 
 /* Compression levels as selectable cards */
 .levels { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
@@ -240,3 +244,81 @@ input[type="radio"] { accent-color: var(--accent); }
 
 .foot { margin-top: 22px; display: grid; gap: 4px; text-align: center; color: var(--muted); font-size: .85rem; }
 .foot i { color: var(--accent-2); }
+
+/* Segmented toggle (radio buttons that look like a switch) */
+.segmented { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.segmented legend { font-weight: 600; margin-bottom: 6px; padding: 0; width: 100%; }
+.segmented label { flex: 1; min-width: 120px; }
+.segmented input { position: absolute; opacity: 0; pointer-events: none; }
+.segmented span {
+  display: flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 12px;
+  border: 1px solid var(--line); border-radius: 10px; background: #fff; cursor: pointer; font-weight: 600; color: var(--muted);
+}
+.segmented input:checked + span { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.segmented input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Password field with show/hide button */
+.pw { position: relative; display: block; }
+.pw input { padding-right: 40px; }
+.pw .icon-btn { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); }
+
+.checks { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.checks legend { font-weight: 600; margin-bottom: 6px; padding: 0; }
+.checks label, .check-inline { display: inline-flex; align-items: center; gap: 8px; font-weight: 400; }
+input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
+.grid.two .check-inline { align-self: end; padding-bottom: 8px; }
+
+/* Page-number position picker: a little page with six spots */
+.number-layout { display: grid; grid-template-columns: auto 1fr; gap: 20px; align-items: start; }
+@media (max-width: 520px) { .number-layout { grid-template-columns: 1fr; } }
+.positions { border: 0; margin: 0; padding: 0; }
+.positions legend { font-weight: 600; margin-bottom: 6px; padding: 0; font-size: .9rem; }
+.mini-page {
+  width: 120px; height: 160px; display: grid; grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: auto 1fr auto; padding: 8px; gap: 4px;
+  background: #fff; border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow);
+}
+.mini-page label { display: grid; place-items: center; cursor: pointer; }
+.mini-page input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.mini-page .lines {
+  grid-column: 1 / -1; margin: 6px 10px;
+  background: repeating-linear-gradient(180deg, var(--line) 0 3px, transparent 3px 11px);
+  border-radius: 2px;
+}
+
+/* Signature maker */
+.sign-maker { display: grid; gap: 10px; }
+.sig-pad { position: relative; }
+.sig-canvas {
+  display: block; width: 100%; height: 170px; touch-action: none; cursor: crosshair;
+  background: #fff; border: 1px dashed #c9d8ee; border-radius: 12px;
+}
+.sig-hint { position: absolute; left: 0; right: 0; bottom: 34%; text-align: center; color: #b4bfcf; pointer-events: none; }
+.sig-pad.has-ink .sig-hint { display: none; }
+.sig-clear { position: absolute; right: 8px; top: 8px; }
+.sig-type-input {
+  width: 100%; font-size: 2rem !important; padding: 14px 16px !important; color: #1d2b4f !important;
+  font-family: "Segoe Script", "Brush Script MT", "Snell Roundhand", "URW Chancery L", cursive !important;
+}
+
+/* Placing the signature on the page */
+.sign-place { display: grid; gap: 10px; }
+.sign-stage {
+  position: relative; width: min(100%, 520px); margin: 0 auto; line-height: 0;
+  border-radius: 6px; box-shadow: 0 2px 12px rgb(44 53 66 / 15%); background: #fff; user-select: none;
+}
+.sign-page-img { width: 100%; height: auto; border-radius: 6px; }
+.sig-box {
+  position: absolute; border: 2px dashed var(--accent); border-radius: 4px; cursor: move;
+  background: rgb(234 242 255 / 35%); touch-action: none; line-height: normal;
+  display: grid; place-items: center;
+}
+.sig-box:focus-visible { outline: 3px solid rgb(47 118 234 / 40%); outline-offset: 2px; }
+.sig-preview { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.sig-preview:not([src]), .sig-preview[src=""] { display: none; }
+.sig-placeholder { color: var(--accent); font-size: .8rem; font-weight: 600; pointer-events: none; }
+.sig-box.has-sig .sig-placeholder { display: none; }
+.sig-handle {
+  position: absolute; right: -7px; bottom: -7px; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--accent); border: 2px solid #fff; cursor: nwse-resize; touch-action: none;
+}

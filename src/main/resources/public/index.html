@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DocSmelt</title>
-  <meta name="description" content="Convert, merge, split, organize, compress and OCR PDF, Word and image files.">
+  <meta name="description" content="Convert, merge, split, organize, compress, OCR, protect, number and sign PDF, Word, Excel, PowerPoint and image files.">
   <meta name="theme-color" content="#6aa8ff">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
@@ -20,7 +20,7 @@
         <img src="favicon.svg" alt="" width="40" height="40">
         <span class="wordmark">doc<b>smelt</b></span>
       </div>
-      <p class="tagline">Convert, merge, split, organize, compress and OCR your documents.</p>
+      <p class="tagline">Convert, edit, protect and sign PDF, Word, Excel, PowerPoint and image files.</p>
     </header>
 
     <nav class="tabs" role="tablist" aria-label="Tools">
@@ -38,6 +38,12 @@
         <i class="fa-solid fa-images" aria-hidden="true"></i><span>Images to PDF</span></button>
       <button role="tab" id="tab-ocr" aria-controls="panel-ocr" aria-selected="false" tabindex="-1">
         <i class="fa-solid fa-spell-check" aria-hidden="true"></i><span>OCR</span></button>
+      <button role="tab" id="tab-protect" aria-controls="panel-protect" aria-selected="false" tabindex="-1">
+        <i class="fa-solid fa-lock" aria-hidden="true"></i><span>Protect</span></button>
+      <button role="tab" id="tab-number" aria-controls="panel-number" aria-selected="false" tabindex="-1">
+        <i class="fa-solid fa-list-ol" aria-hidden="true"></i><span>Page numbers</span></button>
+      <button role="tab" id="tab-sign" aria-controls="panel-sign" aria-selected="false" tabindex="-1">
+        <i class="fa-solid fa-signature" aria-hidden="true"></i><span>Sign</span></button>
     </nav>
 
     <!-- Convert -->
@@ -46,7 +52,7 @@
         <input type="file" multiple class="visually-hidden">
         <i class="fa-solid fa-cloud-arrow-up dz-icon" aria-hidden="true"></i>
         <span class="dz-title">Drop files here or <u>browse</u></span>
-        <span class="dz-hint">PDF, Word, text or images</span>
+        <span class="dz-hint">PDF, Word, Excel, PowerPoint, text or images</span>
       </label>
       <ul class="files" aria-live="polite"></ul>
 
@@ -211,6 +217,150 @@
       </div>
 
       <button class="primary" data-action><i class="fa-solid fa-spell-check" aria-hidden="true"></i> Recognize text</button>
+      <div class="status" role="status"></div>
+    </section>
+
+    <!-- Protect / unlock -->
+    <section class="card" role="tabpanel" id="panel-protect" aria-labelledby="tab-protect" hidden>
+      <label class="dropzone">
+        <input type="file" accept=".pdf,application/pdf" class="visually-hidden">
+        <i class="fa-solid fa-lock dz-icon" aria-hidden="true"></i>
+        <span class="dz-title">Drop a PDF here or <u>browse</u></span>
+        <span class="dz-hint">Add a password, or remove one you know</span>
+      </label>
+      <ul class="files" aria-live="polite"></ul>
+
+      <fieldset class="segmented">
+        <legend class="visually-hidden">What to do</legend>
+        <label><input type="radio" name="secMode" value="protect" checked>
+          <span><i class="fa-solid fa-lock" aria-hidden="true"></i> Add password</span></label>
+        <label><input type="radio" name="secMode" value="unlock">
+          <span><i class="fa-solid fa-lock-open" aria-hidden="true"></i> Remove password</span></label>
+      </fieldset>
+
+      <div class="grid two">
+        <label>Password
+          <span class="pw">
+            <input type="password" name="password" autocomplete="new-password" minlength="4">
+            <button type="button" class="icon-btn" data-reveal title="Show password" aria-label="Show password"><i class="fa-solid fa-eye" aria-hidden="true"></i></button>
+          </span>
+        </label>
+        <label data-protect-only>Repeat password <input type="password" name="confirm" autocomplete="new-password"></label>
+      </div>
+
+      <fieldset class="checks" data-protect-only>
+        <legend>People who open it may</legend>
+        <label><input type="checkbox" name="allowPrint" checked> Print</label>
+        <label><input type="checkbox" name="allowCopy" checked> Copy text</label>
+        <label><input type="checkbox" name="allowEdit" checked> Edit</label>
+      </fieldset>
+      <p class="note" data-protect-only><i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+        Keep the password somewhere safe: a lost password can't be recovered.</p>
+
+      <button class="primary" data-action><i class="fa-solid fa-lock" aria-hidden="true"></i> <span data-label>Protect PDF</span></button>
+      <div class="status" role="status"></div>
+    </section>
+
+    <!-- Page numbers -->
+    <section class="card" role="tabpanel" id="panel-number" aria-labelledby="tab-number" hidden>
+      <label class="dropzone">
+        <input type="file" accept=".pdf,application/pdf" class="visually-hidden">
+        <i class="fa-solid fa-list-ol dz-icon" aria-hidden="true"></i>
+        <span class="dz-title">Drop a PDF here or <u>browse</u></span>
+        <span class="dz-hint">Adds numbers to every page</span>
+      </label>
+      <ul class="files" aria-live="polite"></ul>
+
+      <div class="number-layout">
+        <fieldset class="positions">
+          <legend>Position</legend>
+          <div class="mini-page">
+            <label title="Top left"><input type="radio" name="position" value="top-left" aria-label="Top left"></label>
+            <label title="Top center"><input type="radio" name="position" value="top-center" aria-label="Top center"></label>
+            <label title="Top right"><input type="radio" name="position" value="top-right" aria-label="Top right"></label>
+            <span class="lines" aria-hidden="true"></span>
+            <label title="Bottom left"><input type="radio" name="position" value="bottom-left" aria-label="Bottom left"></label>
+            <label title="Bottom center"><input type="radio" name="position" value="bottom-center" aria-label="Bottom center" checked></label>
+            <label title="Bottom right"><input type="radio" name="position" value="bottom-right" aria-label="Bottom right"></label>
+          </div>
+        </fieldset>
+        <div class="grid two">
+          <label>Style
+            <select name="format">
+              <option value="{n}">1</option>
+              <option value="Page {n}">Page 1</option>
+              <option value="Page {n} of {total}">Page 1 of 10</option>
+              <option value="{n} / {total}">1 / 10</option>
+              <option value="- {n} -">- 1 -</option>
+            </select>
+          </label>
+          <label>Size
+            <select name="size">
+              <option value="9">Small</option>
+              <option value="11" selected>Medium</option>
+              <option value="14">Large</option>
+            </select>
+          </label>
+          <label>First number <input type="number" name="start" min="0" value="1"></label>
+          <label class="check-inline"><input type="checkbox" name="skipFirst"> Skip the first page (cover)</label>
+        </div>
+      </div>
+
+      <button class="primary" data-action><i class="fa-solid fa-list-ol" aria-hidden="true"></i> Add page numbers</button>
+      <div class="status" role="status"></div>
+    </section>
+
+    <!-- Sign -->
+    <section class="card" role="tabpanel" id="panel-sign" aria-labelledby="tab-sign" hidden>
+      <label class="dropzone">
+        <input type="file" accept=".pdf,application/pdf" class="visually-hidden">
+        <i class="fa-solid fa-signature dz-icon" aria-hidden="true"></i>
+        <span class="dz-title">Drop a PDF to sign or <u>browse</u></span>
+        <span class="dz-hint">Draw, type or upload your signature</span>
+      </label>
+      <ul class="files" aria-live="polite"></ul>
+
+      <div class="sign-maker">
+        <fieldset class="segmented">
+          <legend>Your signature</legend>
+          <label><input type="radio" name="sigMode" value="draw" checked><span><i class="fa-solid fa-pen-nib" aria-hidden="true"></i> Draw</span></label>
+          <label><input type="radio" name="sigMode" value="type"><span><i class="fa-solid fa-keyboard" aria-hidden="true"></i> Type</span></label>
+          <label><input type="radio" name="sigMode" value="upload"><span><i class="fa-solid fa-image" aria-hidden="true"></i> Upload</span></label>
+        </fieldset>
+        <div data-sig="draw" class="sig-pad">
+          <canvas class="sig-canvas" aria-label="Signature drawing area"></canvas>
+          <span class="sig-hint">Sign here with your mouse or finger</span>
+          <button type="button" class="ghost sig-clear"><i class="fa-solid fa-eraser" aria-hidden="true"></i> Clear</button>
+        </div>
+        <div data-sig="type" hidden>
+          <input name="sigText" placeholder="Type your name" autocomplete="name" class="sig-type-input">
+        </div>
+        <div data-sig="upload" hidden>
+          <input type="file" name="sigFile" accept="image/png,image/jpeg,image/gif,image/bmp">
+          <p class="note">A PNG with a transparent background looks best.</p>
+        </div>
+      </div>
+
+      <div class="sign-place" hidden>
+        <div class="row">
+          <label for="sign-page">Page</label>
+          <select id="sign-page" name="signPage"></select>
+        </div>
+        <div class="sign-stage">
+          <img class="sign-page-img" alt="Page preview">
+          <div class="sig-box" tabindex="0" role="img" aria-label="Signature position. Use arrow keys to move, plus and minus to resize.">
+            <img class="sig-preview" alt="">
+            <span class="sig-placeholder">Your signature</span>
+            <span class="sig-handle" aria-hidden="true"></span>
+          </div>
+        </div>
+        <p class="note"><i class="fa-solid fa-up-down-left-right" aria-hidden="true"></i>
+          Drag the signature into place and pull the corner to resize (or use the arrow keys and +/−).</p>
+      </div>
+      <p class="note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+        This places an image of your signature, like signing a printout. It is not a certified digital signature.</p>
+
+      <button class="primary" data-action><i class="fa-solid fa-file-signature" aria-hidden="true"></i> Sign PDF</button>
       <div class="status" role="status"></div>
     </section>
 

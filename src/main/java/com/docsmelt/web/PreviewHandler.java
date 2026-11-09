@@ -20,7 +20,8 @@ import java.util.List;
 import java.util.concurrent.Semaphore;
 
 /**
- * POST /api/preview — one PDF → JSON page thumbnails for the Organize tool:
+ * POST /api/preview — one PDF → JSON page thumbnails for the Organize tool
+ * (or, with {@code page}=N and {@code width}, one larger page as displayed, for Sign):
  * {@code {"pages":[{"src":"data:image/jpeg;base64,...","rotation":0}, ...]}}.
  * Thumbnails are rendered without the page's own rotation; the UI applies
  * {@code rotation} plus the user's changes with CSS.
@@ -47,11 +48,25 @@ final class PreviewHandler extends ApiHandler {
         }
         try (PDDocument pdf = Loader.loadPDF(source.toFile())) {
             int count = pdf.getNumberOfPages();
+            PDFRenderer renderer = new PDFRenderer(pdf);
+
+            // Single page as displayed (rotation applied), larger: used to place a signature.
+            if (ctx.formParam("page") != null) {
+                int page = intParam(ctx, "page", 0, 0, count);
+                int index = (page == 0 ? count : page) - 1;
+                int width = intParam(ctx, "width", 700, 100, 1200);
+                PDRectangle box = pdf.getPage(index).getCropBox();
+                boolean sideways = Math.floorMod(pdf.getPage(index).getRotation(), 180) == 90;
+                float pageWidth = sideways ? box.getHeight() : box.getWidth();
+                BufferedImage img = renderer.renderImage(index, width / pageWidth, ImageType.RGB);
+                return new Reply.Json("{\"count\":" + count + ",\"page\":" + (index + 1)
+                        + ",\"pages\":[{\"src\":\"data:image/jpeg;base64," + jpegBase64(img) + "\",\"rotation\":0}]}");
+            }
+
             if (count > MAX_PAGES) {
                 throw new BadRequestResponse("This PDF has " + count + " pages; previews are limited to " + MAX_PAGES);
             }
-            PDFRenderer renderer = new PDFRenderer(pdf);
-            StringBuilder json = new StringBuilder("{\"pages\":[");
+            StringBuilder json = new StringBuilder("{\"count\":" + count + ",\"pages\":[");
             for (int i = 0; i < count; i++) {
                 int rotation = pdf.getPage(i).getRotation();
                 pdf.getPage(i).setRotation(0); // render upright; the browser rotates it
@@ -62,6 +77,8 @@ final class PreviewHandler extends ApiHandler {
                         .append("\",\"rotation\":").append(Math.floorMod(rotation, 360)).append('}');
             }
             return new Reply.Json(json.append("]}").toString());
+        } catch (org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException e) {
+            throw new ConversionException("This PDF is password-protected; unlock it first", e);
         } catch (IOException e) {
             throw new ConversionException("Could not read PDF: " + e.getMessage(), e);
         }

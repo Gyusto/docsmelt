@@ -142,4 +142,56 @@ class NewWebToolsTest {
         assertEquals(400, tooLong.statusCode());
         assertTrue(text(tooLong).contains("limited to 30 pages"), text(tooLong));
     }
+
+    @Test
+    void protectUnlockNumberAndSign() throws Exception {
+        Path src = pdf(dir, "deal.pdf", "Deal", 3);
+
+        var locked = post("/api/protect", List.of(src), Map.of("password", "pass1234", "allowCopy", "false"));
+        assertEquals(200, locked.statusCode(), text(locked));
+        assertTrue(locked.headers().firstValue("Content-Disposition").orElseThrow().contains("deal-protected.pdf"));
+        Path lockedFile = Files.write(dir.resolve("deal-protected.pdf"), locked.body());
+        assertThrows(Exception.class, () -> Loader.loadPDF(lockedFile.toFile()).close());
+        assertEquals(400, post("/api/protect", List.of(src), Map.of()).statusCode());
+
+        var wrong = post("/api/unlock", List.of(lockedFile), Map.of("password", "nope"));
+        assertEquals(400, wrong.statusCode());
+        assertTrue(text(wrong).contains("Wrong password"));
+        var unlocked = post("/api/unlock", List.of(lockedFile), Map.of("password", "pass1234"));
+        assertEquals(200, unlocked.statusCode(), text(unlocked));
+        assertTrue(pdfText(unlocked.body()).contains("Deal page 2"));
+
+        var lockedPreview = post("/api/preview", List.of(lockedFile), Map.of());
+        assertTrue(text(lockedPreview).contains("password-protected"), text(lockedPreview));
+
+        var numbered = post("/api/number", List.of(src), Map.of("format", "Ukurasa {n} / {total}", "position", "top-right"));
+        assertEquals(200, numbered.statusCode(), text(numbered));
+        assertTrue(pdfText(numbered.body()).contains("Ukurasa 3 / 3"));
+        assertEquals(400, post("/api/number", List.of(src), Map.of("format", "no number")).statusCode());
+
+        var big = post("/api/preview", List.of(src), Map.of("page", "0", "width", "400"));
+        assertTrue(text(big).startsWith("{\"count\":3,\"page\":3,"), text(big).substring(0, 40));
+
+        Path sig = image(dir, "sig.png", photo(120, 40));
+        var signed = post("/api/sign", List.of(sig, src), Map.of("page", "2", "x", "0.1", "y", "0.1", "width", "0.3"));
+        assertEquals(200, signed.statusCode(), text(signed));
+        assertEquals(3, pages(signed.body()));
+        assertEquals(400, post("/api/sign", List.of(src, sig), Map.of("x", "2", "y", "0", "width", "0.3")).statusCode());
+        assertEquals(400, post("/api/sign", List.of(src), Map.of()).statusCode());
+    }
+
+    @Test
+    void officeFormatsConvert() throws Exception {
+        var formats = http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port() + "/api/formats")).build(),
+                HttpResponse.BodyHandlers.ofString()).body();
+        assertTrue(formats.contains("\"xlsx\"") && formats.contains("\"pptx\"") && formats.contains("\"xls\""), formats);
+
+        Path txt = dir.resolve("list.txt");
+        Files.writeString(txt, "# Shopping\n\nMilk\n\nBread");
+        var xlsx = post("/api/convert", List.of(txt), Map.of("to", "xlsx"));
+        assertEquals(200, xlsx.statusCode(), text(xlsx));
+        var pptx = post("/api/convert", List.of(txt), Map.of("to", "pptx"));
+        assertEquals(200, pptx.statusCode(), text(pptx));
+        assertEquals("PK", new String(pptx.body(), 0, 2, StandardCharsets.US_ASCII), "a zip-based Office file");
+    }
 }

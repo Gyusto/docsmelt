@@ -7,6 +7,7 @@ import com.docsmelt.model.Document;
 import com.docsmelt.model.ImageBlock;
 import com.docsmelt.model.Page;
 import com.docsmelt.model.Paragraph;
+import com.docsmelt.model.Table;
 import org.apache.poi.xwpf.usermodel.IBodyElement;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
@@ -24,7 +25,8 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Reads .docx files with Apache POI. Word has no fixed pages, so the whole body
@@ -66,16 +68,15 @@ public final class DocxDocumentReader implements DocumentReader {
         }
     }
 
-    /** Tables are flattened: one paragraph per row, cells separated by " | ". */
+    /** Word tables become {@link Table} blocks; the first row is treated as the header. */
     private static void readTable(XWPFTable table, Page page) {
+        List<List<String>> rows = new ArrayList<>();
         for (XWPFTableRow row : table.getRows()) {
-            String line = row.getTableCells().stream()
-                    .map(XWPFTableCell::getText)
-                    .map(String::strip)
-                    .collect(Collectors.joining(" | "));
-            if (!line.isBlank()) {
-                page.add(Paragraph.body(line));
-            }
+            rows.add(row.getTableCells().stream().map(XWPFTableCell::getText).map(String::strip).toList());
+        }
+        Table t = new Table(rows, rows.size() > 1);
+        if (!t.isEmpty()) {
+            page.add(t);
         }
     }
 

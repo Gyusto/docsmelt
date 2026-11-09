@@ -74,6 +74,8 @@ public final class PdfMerger {
         }
         try {
             return Loader.loadPDF(pdf.toFile());
+        } catch (org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException e) {
+            throw new ConversionException(shownAs.getFileName() + " is password-protected; unlock it first", e);
         } catch (IOException e) {
             throw new ConversionException("Could not read PDF " + shownAs + ": " + e.getMessage(), e);
         }

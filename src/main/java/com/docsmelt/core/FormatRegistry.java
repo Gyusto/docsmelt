@@ -7,6 +7,10 @@ import com.docsmelt.io.DocumentWriter;
 import com.docsmelt.io.docx.DocxDocumentReader;
 import com.docsmelt.io.docx.DocxDocumentWriter;
 import com.docsmelt.io.image.ImageDocumentReader;
+import com.docsmelt.io.office.PresentationReader;
+import com.docsmelt.io.office.PresentationWriter;
+import com.docsmelt.io.office.SpreadsheetReader;
+import com.docsmelt.io.office.SpreadsheetWriter;
 import com.docsmelt.io.image.ImageDocumentWriter;
 import com.docsmelt.io.pdf.PdfDocumentReader;
 import com.docsmelt.io.pdf.PdfDocumentWriter;
@@ -36,7 +40,12 @@ public final class FormatRegistry {
                 .registerReader(Format.DOCX, DocxDocumentReader::new)
                 .registerWriter(Format.DOCX, DocxDocumentWriter::new)
                 .registerReader(Format.TXT, TextDocumentReader::new)
-                .registerWriter(Format.TXT, TextDocumentWriter::new);
+                .registerWriter(Format.TXT, TextDocumentWriter::new)
+                .registerReader(Format.XLSX, SpreadsheetReader::new)
+                .registerWriter(Format.XLSX, SpreadsheetWriter::new)
+                .registerReader(Format.XLS, SpreadsheetReader::new)
+                .registerReader(Format.PPTX, PresentationReader::new)
+                .registerWriter(Format.PPTX, PresentationWriter::new);
         for (Format f : Format.values()) {
             if (f.isImage()) {
                 registry.registerReader(f, ImageDocumentReader::new);

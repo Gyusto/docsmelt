@@ -8,12 +8,15 @@ import com.docsmelt.model.Document;
 import com.docsmelt.model.ImageBlock;
 import com.docsmelt.model.Page;
 import com.docsmelt.model.Paragraph;
+import com.docsmelt.model.Table;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.util.Units;
 import org.apache.poi.xwpf.usermodel.BreakType;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFRun;
+import org.apache.poi.xwpf.usermodel.XWPFTable;
+import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 
 import javax.imageio.ImageIO;
 import java.io.ByteArrayInputStream;
@@ -44,6 +47,7 @@ public final class DocxDocumentWriter implements DocumentWriter {
                     switch (block) {
                         case Paragraph p -> writeParagraph(docx, p);
                         case ImageBlock img -> writeImage(docx, img, ++imageCount);
+                        case Table t -> writeTable(docx, t);
                     }
                 }
             }
@@ -67,6 +71,31 @@ public final class DocxDocumentWriter implements DocumentWriter {
             run.setBold(true);
             run.setFontSize(HEADING_FONT_SIZE);
         }
+    }
+
+    private static void writeTable(XWPFDocument docx, Table table) {
+        if (table.isEmpty()) {
+            return;
+        }
+        int cols = table.columnCount();
+        XWPFTable t = docx.createTable(table.rowCount(), cols);
+        t.setWidth("100%");
+        for (int r = 0; r < table.rowCount(); r++) {
+            XWPFTableRow row = t.getRow(r);
+            for (int c = 0; c < cols; c++) {
+                XWPFParagraph p = row.getCell(c).getParagraphs().getFirst();
+                XWPFRun run = p.createRun();
+                run.setText(table.cell(r, c));
+                if (table.header() && r == 0) {
+                    run.setBold(true);
+                    row.getCell(c).setColor("EEF3FB");
+                }
+            }
+            if (table.header() && r == 0) {
+                row.setRepeatHeader(true);
+            }
+        }
+        docx.createParagraph(); // keep following text from sticking to the table
     }
 
     private static void writeImage(XWPFDocument docx, ImageBlock img, int index)
