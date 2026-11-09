@@ -27,6 +27,22 @@ final class Params {
                 .collect(java.util.stream.Collectors.toUnmodifiableMap(Map.Entry::getKey, e -> List.of(e.getValue()))));
     }
 
+    /** Every value of a repeated field (e.g. one per redaction box). */
+    List<String> formParams(String name) {
+        return fields.getOrDefault(name, List.of());
+    }
+
+    /** Fields named {@code prefix + key}, as key → first value (e.g. "field.Name" → "Name"). */
+    java.util.Map<String, String> withPrefix(String prefix) {
+        java.util.Map<String, String> out = new java.util.LinkedHashMap<>();
+        fields.forEach((k, v) -> {
+            if (k.startsWith(prefix) && !v.isEmpty()) {
+                out.put(k.substring(prefix.length()), v.getFirst());
+            }
+        });
+        return out;
+    }
+
     /** First value of a field, or null. */
     String formParam(String name) {
         List<String> values = fields.get(name);

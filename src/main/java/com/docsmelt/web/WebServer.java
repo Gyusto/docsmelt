@@ -5,6 +5,7 @@ import com.docsmelt.format.Format;
 import com.docsmelt.io.ConversionException;
 import com.docsmelt.ocr.OcrService;
 import com.docsmelt.ocr.TesseractEngine;
+import com.docsmelt.pdf.PdfAConverter;
 import com.docsmelt.pdf.PdfMerger;
 import com.docsmelt.pdf.PdfSplitter;
 import io.javalin.Javalin;
@@ -74,7 +75,8 @@ public final class WebServer implements AutoCloseable {
 
         app.before(WebServer::securityHeaders);
         app.get("/api/health", ctx -> ctx.result("ok"));
-        app.get("/api/formats", ctx -> json(ctx, 200, formatsJson(converter, config, ocr)));
+        boolean pdfaAvailable = new PdfAConverter().isAvailable();
+        app.get("/api/formats", ctx -> json(ctx, 200, formatsJson(converter, config, ocr, pdfaAvailable)));
         app.post("/api/convert", new ConvertHandler(config, slots, converter));
         app.post("/api/merge", new MergeHandler(config, slots, new PdfMerger(converter)));
         app.post("/api/split", new SplitHandler(config, slots, new PdfSplitter()));
@@ -90,6 +92,13 @@ public final class WebServer implements AutoCloseable {
         app.post("/api/watermark", new PageToolsHandler(config, slots, PageToolsHandler.Tool.WATERMARK));
         app.post("/api/extract-images", new PageToolsHandler(config, slots, PageToolsHandler.Tool.EXTRACT_IMAGES));
         app.post("/api/crop", new PageToolsHandler(config, slots, PageToolsHandler.Tool.CROP));
+        PdfAConverter pdfa = new PdfAConverter();
+        app.post("/api/find-text", new EditHandler(config, slots, EditHandler.Tool.FIND_TEXT, pdfa));
+        app.post("/api/redact", new EditHandler(config, slots, EditHandler.Tool.REDACT, pdfa));
+        app.post("/api/form-fields", new EditHandler(config, slots, EditHandler.Tool.FORM_FIELDS, pdfa));
+        app.post("/api/fill-form", new EditHandler(config, slots, EditHandler.Tool.FILL_FORM, pdfa));
+        app.post("/api/annotate", new EditHandler(config, slots, EditHandler.Tool.ANNOTATE, pdfa));
+        app.post("/api/pdfa", new EditHandler(config, slots, EditHandler.Tool.PDFA, pdfa));
 
         // Background jobs: poll status, fetch the result (once), or cancel.
         app.get("/api/jobs/{id}", ctx -> json(ctx, 200, job(ctx).statusJson()));
@@ -160,7 +169,7 @@ public final class WebServer implements AutoCloseable {
                 "default-src 'self'; img-src 'self' data: blob:; style-src 'self'; frame-ancestors 'none'");
     }
 
-    private static String formatsJson(Converter converter, ServerConfig config, OcrService ocr) {
+    private static String formatsJson(Converter converter, ServerConfig config, OcrService ocr, boolean pdfa) {
         String langs = ocr.engine().languages().stream()
                 .map(l -> "\"" + escape(l) + "\"")
                 .collect(Collectors.joining(",", "[", "]"));
@@ -169,7 +178,8 @@ public final class WebServer implements AutoCloseable {
                 + ",\"maxUploadMb\":" + config.maxUploadMb()
                 + ",\"maxFiles\":" + config.maxFiles()
                 + ",\"ocr\":{\"available\":" + ocr.engine().isAvailable() + ",\"languages\":" + langs
-                + ",\"maxPages\":" + OcrHandler.MAX_PAGES + "}}";
+                + ",\"maxPages\":" + OcrHandler.MAX_PAGES + "},\"pdfa\":" + pdfa
+                + ",\"maxPdfPages\":" + config.maxPages() + "}";
     }
 
     private static String extensions(Collection<Format> formats) {

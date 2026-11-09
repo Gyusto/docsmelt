@@ -40,6 +40,19 @@ final class PageGeometry {
     }
 
     /**
+     * Converts a point in page space (relative to the crop box's lower-left
+     * corner) to display coordinates {u, v}: origin bottom-left as shown.
+     */
+    float[] toDisplay(float x, float y) {
+        return switch (rotation) {
+            case 90 -> new float[]{y, w - x};
+            case 180 -> new float[]{w - x, h - y};
+            case 270 -> new float[]{h - y, x};
+            default -> new float[]{x, y};
+        };
+    }
+
+    /**
      * Matrix mapping a unit (or text) space to display coordinates
      * {@code (u, v)} with scale {@code (sx, sy)}, then into user space.
      * Use scale 1 for text and the image size for images.

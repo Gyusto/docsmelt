@@ -34,7 +34,7 @@ import java.util.stream.Collectors;
         subcommands = {MergeCommand.class, SplitCommand.class, PagesCommand.class, ImagesCommand.class,
                 CompressCommand.class, OcrCommand.class, ProtectCommand.class, UnlockCommand.class,
                 NumberCommand.class, SignCommand.class, WatermarkCommand.class, ExtractImagesCommand.class,
-                CropCommand.class, ServeCommand.class},
+                CropCommand.class, RedactCommand.class, FormCommand.class, PdfACommand.class, ServeCommand.class},
         description = "Convert between PDF, Word, Excel, PowerPoint, text and image files.",
         footer = {
                 "",
@@ -51,6 +51,9 @@ import java.util.stream.Collectors;
                 "  docsmelt watermark a.pdf -o w.pdf --text DRAFT     text or image watermark",
                 "  docsmelt extract-images a.pdf -o images/           save embedded pictures",
                 "  docsmelt crop a.pdf -o c.pdf [--margin MM | --resize a4]   trim or resize pages",
+                "  docsmelt redact a.pdf -o r.pdf --find \"secret\"      permanently black out text",
+                "  docsmelt form a.pdf [-o f.pdf --set NAME=VALUE]    list or fill form fields",
+                "  docsmelt pdfa a.pdf -o archive.pdf                 PDF/A for archiving",
                 "  docsmelt serve                                     web UI at http://127.0.0.1:8080",
                 "  docsmelt report.docx report.pdf               single file",
                 "  docsmelt slides.pdf page.png --dpi 300        -> page-1.png, page-2.png, ...",

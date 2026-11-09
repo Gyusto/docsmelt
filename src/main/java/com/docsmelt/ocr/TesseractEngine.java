@@ -87,48 +87,6 @@ public final class TesseractEngine implements OcrEngine {
     }
 
     private static String run(List<String> cmd, Duration timeout) {
-        Process process;
-        try {
-            process = new ProcessBuilder(cmd).redirectErrorStream(true).start();
-        } catch (IOException e) {
-            throw new ConversionException("OCR is not available: '" + cmd.getFirst() + "' could not be started. "
-                    + "Install Tesseract (e.g. apt install tesseract-ocr).", e);
-        }
-        // A watchdog kills the process if it runs too long; reading its output then ends too.
-        AtomicBoolean timedOut = new AtomicBoolean();
-        Thread watchdog = Thread.ofVirtual().start(() -> {
-            try {
-                if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
-                    timedOut.set(true);
-                    process.destroyForcibly();
-                }
-            } catch (InterruptedException finishedFirst) {
-                Thread.currentThread().interrupt(); // run() finished first; just stop watching
-            }
-        });
-        try (InputStream out = process.getInputStream()) {
-            String text = new String(out.readAllBytes(), StandardCharsets.UTF_8); // drains until exit
-            int exit = process.waitFor();
-            if (timedOut.get()) {
-                throw new ConversionException("OCR timed out after " + timeout.toSeconds() + " seconds");
-            }
-            if (exit != 0) {
-                throw new ConversionException("OCR failed: " + tail(text));
-            }
-            return text;
-        } catch (IOException e) {
-            throw new ConversionException("OCR failed: " + e.getMessage(), e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new ConversionException("OCR was interrupted");
-        } finally {
-            watchdog.interrupt();
-            process.destroyForcibly();
-        }
-    }
-
-    private static String tail(String text) {
-        String t = text.strip();
-        return t.length() > 400 ? "…" + t.substring(t.length() - 400) : t;
+        return com.docsmelt.io.ProcessRunner.run(cmd, timeout, "OCR");
     }
 }
