@@ -25,10 +25,16 @@
       <button type="button" id="install-btn" class="ghost" hidden>
         <i class="fa-solid fa-download" aria-hidden="true"></i> <span data-i18n="install">Install app</span>
       </button>
-      <div class="lang-switch" role="group" data-i18n-aria="lang.label">
-        <button type="button" data-lang="en" lang="en">EN</button>
-        <button type="button" data-lang="sw" lang="sw">SW</button>
-      </div>
+      <label class="lang-select">
+        <i class="fa-solid fa-globe" aria-hidden="true"></i>
+        <span class="visually-hidden" data-i18n="lang.label">Language</span>
+        <select id="lang-select">
+          <option value="en" lang="en">English</option>
+          <option value="sw" lang="sw">Kiswahili</option>
+          <option value="fr" lang="fr">Français</option>
+          <option value="ar" lang="ar">العربية</option>
+        </select>
+      </label>
       <button type="button" id="theme-btn" class="icon-btn round"><i class="fa-solid fa-moon" aria-hidden="true"></i></button>
     </div>
   </header>
@@ -44,6 +50,15 @@
           <kbd>/</kbd>
         </label>
       </div>
+      <section id="recent" class="recent" hidden>
+        <div class="recent-head">
+          <h2 data-i18n="recent.title"></h2>
+          <span class="note" data-i18n="recent.note"></span>
+          <span class="spacer"></span>
+          <button type="button" class="ghost" data-recent-clear><i class="fa-solid fa-xmark" aria-hidden="true"></i> <span data-i18n="recent.clear"></span></button>
+        </div>
+        <ul class="recent-list"></ul>
+      </section>
       <div id="tool-groups"></div>
       <p id="search-empty" class="search-empty" hidden></p>
     </section>
@@ -92,7 +107,9 @@
       <span class="spacer"></span>
       <button type="button" class="ghost" data-rotate-all="-90" data-i18n-aria="org.rotAllL"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i> <span data-i18n="org.all"></span></button>
       <button type="button" class="ghost" data-rotate-all="90" data-i18n-aria="org.rotAllR"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> <span data-i18n="org.all"></span></button>
-      <button type="button" class="ghost" data-reset><i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i> <span data-i18n="org.reset"></span></button>
+      <button type="button" class="ghost" data-reset><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> <span data-i18n="org.reset"></span></button>
+      <button type="button" class="icon-btn" data-undo data-i18n-aria="undo"><i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i></button>
+      <button type="button" class="icon-btn" data-redo data-i18n-aria="redo"><i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i></button>
     </div>
     <p class="note pages-hint" hidden><i class="fa-solid fa-hand-pointer" aria-hidden="true"></i> <span data-i18n="org.hint"></span></p>
   </template>
@@ -302,7 +319,72 @@
           <span class="sig-handle" aria-hidden="true"></span>
         </div>
       </div>
-      <p class="note"><i class="fa-solid fa-up-down-left-right" aria-hidden="true"></i> <span data-i18n="sg.place"></span></p>
+      <div class="row sign-tools">
+        <p class="note"><i class="fa-solid fa-up-down-left-right" aria-hidden="true"></i> <span data-i18n="sg.place"></span></p>
+        <button type="button" class="icon-btn" data-undo data-i18n-aria="undo"><i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i></button>
+      </div>
+    </div>
+  </template>
+
+  <template id="opts-redact">
+    <div class="find-row">
+      <label for="redact-find" data-i18n="rd.find"></label>
+      <div class="row">
+        <input id="redact-find" name="find" data-i18n-placeholder="rd.findPh" autocomplete="off">
+        <button type="button" class="ghost" data-find><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> <span data-i18n="rd.findBtn"></span></button>
+      </div>
+      <p class="note find-result" aria-live="polite"></p>
+    </div>
+    <p class="note"><i class="fa-solid fa-hand-pointer" aria-hidden="true"></i> <span data-i18n="rd.draw"></span></p>
+    <div class="row"><span class="note item-count"></span><span class="spacer"></span>
+      <button type="button" class="ghost" data-clear-all><i class="fa-solid fa-xmark" aria-hidden="true"></i> <span data-i18n="rd.clearAll"></span></button></div>
+    <label class="check-inline"><input type="checkbox" name="removeMetadata" checked> <span data-i18n="rd.meta"></span></label>
+    <p class="notice"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> <span data-i18n="rd.warn"></span></p>
+  </template>
+
+  <template id="opts-annotate">
+    <div class="grid two">
+      <label><span data-i18n="ed.color"></span> <input name="color" type="color" value="#1d2b4f"></label>
+      <label><span data-i18n="ed.size"></span>
+        <select name="textSize"><option value="10">10</option><option value="14" selected>14</option><option value="18">18</option><option value="24">24</option><option value="36">36</option></select>
+      </label>
+    </div>
+    <p class="note"><i class="fa-solid fa-hand-pointer" aria-hidden="true"></i> <span data-i18n="ed.hint"></span></p>
+    <span class="note item-count"></span>
+  </template>
+
+  <template id="opts-forms">
+    <div class="form-fields"></div>
+    <label class="check-inline"><input type="checkbox" name="flatten"> <span data-i18n="fm.flatten"></span></label>
+  </template>
+
+  <template id="opts-pdfa">
+    <p class="notice" hidden><i class="fa-solid fa-circle-info" aria-hidden="true"></i> <span data-i18n="pa.off"></span></p>
+    <p class="note"><i class="fa-solid fa-box-archive" aria-hidden="true"></i> <span data-i18n="pa.note"></span></p>
+  </template>
+
+  <!-- Shared page editor (Redact, Add text & shapes) -->
+  <template id="side-editor">
+    <div class="side-empty"><i class="fa-regular fa-file-lines" aria-hidden="true"></i><p data-i18n="ed.empty"></p></div>
+    <div class="editor" hidden>
+      <div class="editor-bar">
+        <div class="editor-tools" role="toolbar" data-i18n-aria="ed.tools"></div>
+        <span class="spacer"></span>
+        <button type="button" class="icon-btn" data-undo data-i18n-aria="undo"><i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i></button>
+        <button type="button" class="icon-btn" data-redo data-i18n-aria="redo"><i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i></button>
+        <button type="button" class="icon-btn remove" data-delete data-i18n-aria="ed.delete"><i class="fa-solid fa-trash-can" aria-hidden="true"></i></button>
+      </div>
+      <div class="editor-stage">
+        <img class="editor-page" alt="">
+        <svg class="editor-svg" aria-hidden="true"></svg>
+        <div class="editor-layer"></div>
+        <div class="pv-loading" hidden><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i></div>
+      </div>
+      <div class="pv-pager">
+        <button type="button" class="icon-btn" data-step="-1" data-i18n-aria="pv.prev"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></button>
+        <span class="pv-count"></span>
+        <button type="button" class="icon-btn" data-step="1" data-i18n-aria="pv.next"><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
+      </div>
     </div>
   </template>
 

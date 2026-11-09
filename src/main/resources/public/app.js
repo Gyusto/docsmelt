@@ -38,6 +38,7 @@ class I18n {
 
   apply(root) {
     document.documentElement.lang = this.lang;
+    document.documentElement.dir = this.lang === "ar" ? "rtl" : "ltr";
     root.querySelectorAll("[data-i18n]").forEach((e) => { e.textContent = this.t(e.dataset.i18n); });
     root.querySelectorAll("[data-i18n-placeholder]").forEach((e) => { e.placeholder = this.t(e.dataset.i18nPlaceholder); });
     root.querySelectorAll("[data-i18n-aria]").forEach((e) => {
@@ -70,16 +71,37 @@ class Api {
     return res.json();
   }
 
-  /** POSTs a multipart form with upload progress, resolving to { blob, filename }. */
+  /**
+   * POSTs a multipart form with upload progress (fetch can't report that).
+   * Resolves to { blob, filename } — or { id } when the server started a background job (202).
+   */
   send(endpoint, form, onUploadProgress = () => {}) {
+    return this.xhr("POST", endpoint, form, onUploadProgress);
+  }
+
+  async job(id) {
+    const res = await fetch(`api/jobs/${id}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(t("st.failed", { code: res.status }));
+    return res.json();
+  }
+
+  result(id) { return this.xhr("GET", `api/jobs/${id}/result`); }
+
+  cancel(id) { return fetch(`api/jobs/${id}`, { method: "DELETE" }).catch(() => {}); }
+
+  xhr(method, url, body = null, onUploadProgress = () => {}) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open("POST", endpoint);
+      xhr.open(method, url);
       xhr.responseType = "blob";
       xhr.upload.onprogress = (e) => e.lengthComputable && onUploadProgress(e.loaded / e.total);
       xhr.upload.onload = () => onUploadProgress(1);
       xhr.onerror = () => reject(new Error(t("st.network")));
       xhr.onload = async () => {
+        if (xhr.status === 202) {
+          resolve({ id: JSON.parse(await xhr.response.text()).id });
+          return;
+        }
         if (xhr.status === 200) {
           resolve({ blob: xhr.response, filename: Api.filename(xhr.getResponseHeader("Content-Disposition")) });
           return;
@@ -88,7 +110,7 @@ class Api {
         try { message = JSON.parse(await xhr.response.text()).error || message; } catch { /* not JSON */ }
         reject(new Error(i18n.serverError(message)));
       };
-      xhr.send(form);
+      xhr.send(body);
     });
   }
 
@@ -145,13 +167,67 @@ const formatSize = (bytes) =>
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
+/* ---------- Thumbnails & undo ----------------------------------------------- */
+
+/** First-page thumbnails for file lists: images locally, documents via the server (cached). */
+class Thumbnails {
+  constructor(api) {
+    this.api = api;
+    this.cache = new WeakMap();
+    this.queue = Promise.resolve(); // one request at a time keeps the server responsive
+  }
+
+  get(file) {
+    if (!this.cache.has(file)) this.cache.set(file, this.load(file));
+    return this.cache.get(file);
+  }
+
+  load(file) {
+    const e = ext(file.name);
+    if (IMAGE_EXTS.includes(e)) return Promise.resolve(URL.createObjectURL(file));
+    if (!PREVIEWABLE.includes(e)) return Promise.resolve(null);
+    const job = this.queue.then(async () => {
+      const form = new FormData();
+      form.append("files", file, file.name);
+      form.append("page", "1");
+      form.append("width", "120");
+      const { blob } = await this.api.send("api/preview", form);
+      return JSON.parse(await blob.text()).pages[0].src;
+    }).catch(() => null);
+    this.queue = job.then(() => {}, () => {});
+    return job;
+  }
+}
+
+/** Undo/redo stacks of snapshots. */
+class History {
+  constructor(limit = 100) { this.limit = limit; this.clear(); }
+  clear() { this.past = []; this.future = []; }
+  record(state) {
+    this.past.push(state);
+    if (this.past.length > this.limit) this.past.shift();
+    this.future = [];
+  }
+  undo(current) {
+    if (!this.past.length) return null;
+    this.future.push(current);
+    return this.past.pop();
+  }
+  redo(current) {
+    if (!this.future.length) return null;
+    this.past.push(current);
+    return this.future.pop();
+  }
+}
+
 /* ---------- File list ----------------------------------------------------- */
 
 class FileList {
-  constructor(listEl, { single = false, sortable = false, onChange, onPreview }) {
+  constructor(listEl, { single = false, sortable = false, thumbnails = null, onChange, onPreview }) {
     this.listEl = listEl;
     this.single = single;
     this.sortable = sortable;
+    this.thumbnails = thumbnails;
     this.onChange = onChange;
     this.onPreview = onPreview;
     this.files = [];
@@ -175,10 +251,52 @@ class FileList {
   }
 
   move(index, delta) {
-    const [file] = this.files.splice(index, 1);
-    this.files.splice(index + delta, 0, file);
-    this.render();
+    this.moveTo(index, index + delta);
     this.listEl.children[index + delta]?.querySelector(delta < 0 ? "[data-up]" : "[data-down]")?.focus();
+  }
+
+  moveTo(from, to) {
+    if (from === to || to < 0 || to >= this.files.length) return;
+    const [file] = this.files.splice(from, 1);
+    this.files.splice(to, 0, file);
+    this.render();
+  }
+
+  thumb(file) {
+    const box = el("span", { className: "thumb" }, fileIcon(file.name));
+    this.thumbnails.get(file).then((src) => {
+      if (src) box.replaceChildren(el("img", { src, alt: "", draggable: false }));
+    });
+    return box;
+  }
+
+  /** Mouse/touch drag reordering; the arrow buttons remain for keyboard users. */
+  makeDraggable(li, index) {
+    li.draggable = true;
+    li.title = t("thumb.drag");
+    li.addEventListener("dragstart", (e) => {
+      this.dragFrom = index;
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", String(index));
+      li.classList.add("dragging");
+    });
+    li.addEventListener("dragend", () => { li.classList.remove("dragging"); this.dragFrom = undefined; });
+    li.addEventListener("dragover", (e) => {
+      if (this.dragFrom === undefined) return;
+      e.preventDefault();
+      const after = e.clientY > li.getBoundingClientRect().top + li.offsetHeight / 2;
+      li.classList.toggle("drop-after", after);
+      li.classList.toggle("drop-before", !after);
+    });
+    li.addEventListener("dragleave", () => li.classList.remove("drop-before", "drop-after"));
+    li.addEventListener("drop", (e) => {
+      if (this.dragFrom === undefined) return;
+      e.preventDefault();
+      e.stopPropagation();
+      let to = index + (li.classList.contains("drop-after") ? 1 : 0);
+      if (this.dragFrom < to) to -= 1;
+      this.moveTo(this.dragFrom, to);
+    });
   }
 
   markPreview(file) {
@@ -201,9 +319,11 @@ class FileList {
       const name = el("button", { type: "button", className: "file-name", textContent: file.name, title: file.name,
         onclick: () => this.onPreview?.(file) });
       name.setAttribute("aria-label", t("file.preview", { name: file.name }));
-      const li = el("li", {}, fileIcon(file.name), name,
+      const lead = this.thumbnails ? this.thumb(file) : fileIcon(file.name);
+      const li = el("li", {}, lead, name,
         el("span", { className: "size", textContent: formatSize(file.size) }), ...buttons);
       li.classList.toggle("previewing", file === this.previewing && this.files.length > 1);
+      if (this.sortable) this.makeDraggable(li, i);
       return li;
     }));
     if (notify) this.onChange();
@@ -215,11 +335,29 @@ class FileList {
 class Status {
   constructor(node) { this.node = node; this.url = null; }
 
-  busy(text) {
+  busy(text, onCancel = null) {
     this.bar = el("span");
     this.track = el("div", { className: "bar" }, this.bar);
     this.label = el("span", { textContent: text });
-    this.set("busy", "spinner", "fa-spin", this.label, this.track);
+    const parts = [this.label, this.track];
+    if (onCancel) {
+      parts.push(el("button", { type: "button", className: "ghost small", onclick: onCancel },
+        icon("xmark"), ` ${t("st.cancel")}`));
+    }
+    this.set("busy", "spinner", "fa-spin", ...parts);
+  }
+
+  /** Server-side progress: "Working… 3 of 10". */
+  steps(done, total, label) {
+    if (!this.label) return;
+    if (!total) {
+      this.label.textContent = label;
+      this.track.classList.add("indeterminate");
+      return;
+    }
+    this.track.classList.remove("indeterminate");
+    this.label.textContent = `${label} ${t("st.step", { n: Math.min(done + 1, total), total })}`;
+    this.bar.style.width = `${Math.round((done / total) * 100)}%`;
   }
 
   progress(fraction, processingText = t("st.processing")) {
@@ -377,15 +515,22 @@ class PreviewPane {
 /* ---------- What can follow what ------------------------------------------ */
 
 const NEXT_STEPS = {
-  pdf: ["compress", "sign", "protect", "number", "watermark", "organize", "split", "crop", "merge", "extract", "ocr", "convert"],
+  pdf: ["compress", "sign", "protect", "redact", "annotate", "number", "watermark", "organize", "split", "crop", "merge",
+    "extract", "ocr", "pdfa", "convert"],
   image: ["images", "ocr", "convert"],
   office: ["convert", "merge"],
 };
 
+function nextToolIds(file) {
+  const e = ext(file.name);
+  const kind = e === "pdf" ? "pdf" : IMAGE_EXTS.includes(e) ? "image" : OFFICE_EXTS.includes(e) ? "office" : null;
+  return NEXT_STEPS[kind] ?? [];
+}
+
 /* ---------- Tool panels (template method) --------------------------------- */
 
 class ToolPanel {
-  constructor(tool, section, ctx, { single = false, sortable = false, minFiles = 1 } = {}) {
+  constructor(tool, section, ctx, { single = false, sortable = false, minFiles = 1, thumbnails = false } = {}) {
     this.tool = tool;
     this.id = tool.id;
     this.section = section;
@@ -397,7 +542,8 @@ class ToolPanel {
     this.status = new Status(section.querySelector(".status"));
     this.nextEl = section.querySelector(".next-steps");
     this.files = new FileList(section.querySelector(".files"), {
-      single, sortable, onChange: () => this.filesChanged(), onPreview: (f) => this.previewFile(f),
+      single, sortable, thumbnails: thumbnails ? ctx.app.thumbnails : null,
+      onChange: () => this.filesChanged(), onPreview: (f) => this.previewFile(f),
     });
     const pane = section.querySelector(".pv-body") ? section.querySelector(".preview-pane") : null;
     this.preview = pane ? new PreviewPane(pane, this.api) : null;
@@ -416,11 +562,7 @@ class ToolPanel {
   validate() { return null; }
   summary(_result) { return null; }
   ready() { return this.files.files.length >= this.minFiles; }
-  nextTools(file) {
-    const e = ext(file.name);
-    const kind = e === "pdf" ? "pdf" : IMAGE_EXTS.includes(e) ? "image" : OFFICE_EXTS.includes(e) ? "office" : null;
-    return (NEXT_STEPS[kind] ?? []).filter((id) => id !== this.id);
-  }
+  nextTools(file) { return nextToolIds(file).filter((id) => id !== this.id); }
 
   field(name) { return this.section.querySelector(`[name="${name}"]`); }
 
@@ -483,27 +625,52 @@ class ToolPanel {
     if (problem) { this.status.error(problem); return; }
 
     this.busy = true;
+    this.cancelled = false;
     this.refresh();
     this.hideNext();
-    this.status.busy(this.busyText());
+    this.status.busy(this.busyText(), () => this.cancel());
     try {
       await this.prepare();
       const form = new FormData();
       this.files.files.forEach((f) => form.append("files", f, f.name));
       this.fillForm(form);
-      const result = await this.api.send(this.endpoint(), form, (p) => this.status.progress(p, this.processingText()));
+      form.append("async", "true"); // run as a background job with progress
+      const started = await this.api.send(this.endpoint(), form, (p) => this.status.progress(p, this.processingText()));
+      const result = started.id ? await this.waitForJob(started.id) : started;
       this.status.done(result, this.summary(result));
       this.onResult(result);
     } catch (err) {
-      this.status.error(err.message);
+      this.status.error(this.cancelled ? t("st.cancelled") : err.message);
     } finally {
       this.busy = false;
+      this.jobId = null;
       this.refresh();
     }
   }
 
+  /** Polls a background job, showing its progress, until it finishes. */
+  async waitForJob(id) {
+    this.jobId = id;
+    for (;;) {
+      if (this.cancelled) throw new Error(t("st.cancelled"));
+      await new Promise((r) => setTimeout(r, 500));
+      if (this.cancelled) throw new Error(t("st.cancelled"));
+      const job = await this.api.job(id);
+      if (job.state === "done") return this.api.result(id);
+      if (job.state === "failed") throw new Error(i18n.serverError(job.error));
+      if (job.state === "queued") this.status.steps(0, 0, t("st.queued"));
+      else this.status.steps(job.done, job.total, this.processingText());
+    }
+  }
+
+  cancel() {
+    this.cancelled = true;
+    if (this.jobId) this.api.cancel(this.jobId);
+  }
+
   onResult({ blob, filename }) {
     const file = new File([blob], filename, { type: blob.type });
+    this.app.recent.add(file, this.id);
     this.preview?.showResult(file);
     this.nextFile = file;
     this.renderNext();
@@ -571,7 +738,7 @@ class ConvertPanel extends ToolPanel {
 }
 
 class MergePanel extends ToolPanel {
-  constructor(tool, section, ctx) { super(tool, section, ctx, { sortable: true, minFiles: 2 }); }
+  constructor(tool, section, ctx) { super(tool, section, ctx, { sortable: true, minFiles: 2, thumbnails: true }); }
   endpoint() { return "api/merge"; }
 }
 
@@ -613,7 +780,7 @@ class CompressPanel extends ToolPanel {
 }
 
 class ImagesPanel extends ToolPanel {
-  constructor(tool, section, ctx) { super(tool, section, ctx, { sortable: true }); }
+  constructor(tool, section, ctx) { super(tool, section, ctx, { sortable: true, thumbnails: true }); }
   endpoint() { return "api/images-to-pdf"; }
   validate() { return this.requireExt(IMAGE_EXTS, "v.imagesOnly"); }
   fillForm(form) {
@@ -834,9 +1001,17 @@ class OrganizePanel extends ToolPanel {
     this.loadToken = 0;
     section.querySelectorAll("[data-rotate-all]").forEach((b) =>
       b.addEventListener("click", () => this.rotateAll(Number(b.dataset.rotateAll))));
-    section.querySelector("[data-reset]").addEventListener("click", () => this.reset());
+    section.querySelector("[data-reset]").addEventListener("click", () => { this.remember(); this.reset(); });
+    this.history = new History();
+    section.querySelector("[data-undo]").addEventListener("click", () => this.undo());
+    section.querySelector("[data-redo]").addEventListener("click", () => this.redo());
     i18n.onChange(() => this.render());
   }
+
+  snapshot() { return this.pages.map((p) => ({ ...p })); }
+  remember() { this.history.record(this.snapshot()); }
+  undo() { const s = this.history.undo(this.snapshot()); if (s) { this.pages = s; this.render(); } }
+  redo() { const s = this.history.redo(this.snapshot()); if (s) { this.pages = s; this.render(); } }
 
   endpoint() { return "api/organize"; }
   processingText() { return t("b.save"); }
@@ -868,6 +1043,7 @@ class OrganizePanel extends ToolPanel {
       if (token !== this.loadToken) return; // a newer file was chosen meanwhile
       const data = JSON.parse(await blob.text());
       this.original = data.pages.map((p, i) => ({ orig: i + 1, src: p.src, base: p.rotation, rotation: 0 }));
+      this.history.clear();
       this.reset();
       this.status.clear();
     } catch (err) {
@@ -884,12 +1060,14 @@ class OrganizePanel extends ToolPanel {
   }
 
   rotateAll(delta) {
+    this.remember();
     this.pages.forEach((p) => { p.rotation = (p.rotation + delta + 360) % 360; });
     this.render();
   }
 
   move(from, to) {
     if (to < 0 || to >= this.pages.length || from === to) return;
+    this.remember();
     const [page] = this.pages.splice(from, 1);
     this.pages.splice(to, 0, page);
     this.render();
@@ -906,6 +1084,8 @@ class OrganizePanel extends ToolPanel {
     const removed = this.original.length - this.pages.length;
     const loaded = this.original.length > 0;
     this.toolbar.hidden = this.hint.hidden = !loaded;
+    this.section.querySelector("[data-undo]").disabled = !this.history?.past.length;
+    this.section.querySelector("[data-redo]").disabled = !this.history?.future.length;
     this.sideEmpty.hidden = loaded || this.grid.querySelector(".loading") !== null;
     this.countEl.textContent = loaded ? t("org.count", { n: this.pages.length }) + (removed ? t("org.removed", { n: removed }) : "") : "";
     if (loaded || !this.grid.querySelector(".loading")) {
@@ -924,12 +1104,12 @@ class OrganizePanel extends ToolPanel {
       el("div", { className: "page-thumb" }, img),
       el("div", { className: "page-meta" },
         el("span", { className: "page-num", textContent: String(n) }),
-        iconButton("trash-can", t("org.delete", { n }), () => { this.pages.splice(index, 1); this.render(); }, { extra: "remove" })),
+        iconButton("trash-can", t("org.delete", { n }), () => { this.remember(); this.pages.splice(index, 1); this.render(); }, { extra: "remove" })),
       el("div", { className: "page-meta" },
         iconButton("chevron-left", t("org.earlier", { n }), () => this.move(index, index - 1), { disabled: index === 0 }),
         el("span", { className: "page-actions" },
-          iconButton("rotate-left", t("org.rotL", { n }), () => { page.rotation = (page.rotation + 270) % 360; this.render(); }),
-          iconButton("rotate-right", t("org.rotR", { n }), () => { page.rotation = (page.rotation + 90) % 360; this.render(); })),
+          iconButton("rotate-left", t("org.rotL", { n }), () => { this.remember(); page.rotation = (page.rotation + 270) % 360; this.render(); }),
+          iconButton("rotate-right", t("org.rotR", { n }), () => { this.remember(); page.rotation = (page.rotation + 90) % 360; this.render(); })),
         iconButton("chevron-right", t("org.later", { n }), () => this.move(index, index + 1),
           { disabled: index === this.pages.length - 1 })));
 
@@ -1075,12 +1255,15 @@ class SignPanel extends ToolPanel {
     this.field("sigText").addEventListener("input", () => this.updateSignature());
     this.field("sigFile").addEventListener("change", (e) => this.loadUploaded(e.target.files[0]));
     this.pageSelect.addEventListener("change", () => this.loadPage(Number(this.pageSelect.value)));
+    this.history = new History();
+    section.querySelector("[data-undo]").addEventListener("click", () => this.undo());
     this.wireBox();
     new ResizeObserver(() => this.layoutBox()).observe(this.stage);
     i18n.onChange(() => this.renderPageOptions());
   }
 
   sigMode() { return this.section.querySelector("[name=sigMode]:checked").value; }
+  undo() { const s = this.history.undo({ ...this.pos }); if (s) { this.pos = s; this.layoutBox(); } }
   endpoint() { return "api/sign"; }
   processingText() { return t("b.sign"); }
   ready() { return (this.files?.files.length ?? 0) === 1 && !!this.pageLoaded && !!this.sigCanvas; }
@@ -1245,6 +1428,7 @@ class SignPanel extends ToolPanel {
       e.stopPropagation();
       e.target.setPointerCapture(e.pointerId);
       drag = { mode, px: e.clientX, py: e.clientY, ...this.pos };
+      this.history.record({ ...this.pos });
       this.box.focus({ preventScroll: true });
     };
     const move = (e) => {
@@ -1270,6 +1454,7 @@ class SignPanel extends ToolPanel {
     this.box.addEventListener("keydown", (e) => {
       const step = e.shiftKey ? 0.05 : 0.01;
       const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+      if ((moves[e.key] || ["+", "=", "-"].includes(e.key)) && !e.repeat) this.history.record({ ...this.pos });
       if (moves[e.key]) {
         this.pos.x += moves[e.key][0];
         this.pos.y += moves[e.key][1];
@@ -1283,6 +1468,641 @@ class SignPanel extends ToolPanel {
       e.preventDefault();
       this.layoutBox();
     });
+  }
+}
+
+
+/* ---------- Page editor (Redact, Add text & shapes) ------------------------ */
+
+/**
+ * Shows one page at a time and lets the user place items on it: boxes,
+ * highlights, rectangles, text, lines and arrows. Positions are fractions of
+ * the page as displayed (top-left origin), which is what the server expects.
+ */
+class PageEditor {
+  constructor(root, api, { tools, defaultTool, style, onChange }) {
+    this.root = root;
+    this.api = api;
+    this.tools = tools;
+    this.tool = defaultTool;
+    this.style = style;
+    this.onChange = onChange;
+    this.editor = root.querySelector(".editor");
+    this.empty = root.querySelector(".side-empty");
+    this.stage = root.querySelector(".editor-stage");
+    this.img = root.querySelector(".editor-page");
+    this.svg = root.querySelector(".editor-svg");
+    this.layer = root.querySelector(".editor-layer");
+    this.loading = root.querySelector(".pv-loading");
+    this.pager = root.querySelector(".pv-pager");
+    this.countEl = root.querySelector(".pv-count");
+    this.toolsEl = root.querySelector(".editor-tools");
+    this.items = [];
+    this.history = new History();
+    this.page = 1;
+    this.total = 1;
+    this.nextId = 1;
+    this.token = 0;
+    this.renderTools();
+    root.querySelector("[data-undo]").addEventListener("click", () => this.undo());
+    root.querySelector("[data-redo]").addEventListener("click", () => this.redo());
+    root.querySelector("[data-delete]").addEventListener("click", () => this.deleteSelected());
+    root.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () =>
+      this.showPage(clamp(this.page + Number(b.dataset.step), 1, this.total))));
+    this.stage.addEventListener("pointerdown", (e) => this.down(e));
+    this.stage.addEventListener("pointermove", (e) => this.moveTo(e));
+    this.stage.addEventListener("pointerup", () => this.up());
+    this.stage.addEventListener("pointercancel", () => this.up());
+    new ResizeObserver(() => this.render()).observe(this.stage);
+    i18n.onChange(() => { this.renderTools(); this.updatePager(); this.render(); });
+  }
+
+  renderTools() {
+    this.toolsEl.replaceChildren(...this.tools.map((tool) => {
+      const b = iconButton(tool.icon, t(tool.label), () => this.setTool(tool.id));
+      b.setAttribute("aria-pressed", String(tool.id === this.tool));
+      b.classList.add("tool-btn");
+      return b;
+    }));
+    this.stage.dataset.tool = this.tool;
+  }
+
+  setTool(id) {
+    this.tool = id;
+    this.selected = null;
+    this.renderTools();
+    this.render();
+    this.onToolChange?.(id);
+  }
+
+  async load(file) {
+    this.file = file;
+    this.items = [];
+    this.selected = null;
+    this.history.clear();
+    this.cache = new Map();
+    this.editor.hidden = false;
+    this.empty.hidden = true;
+    await this.showPage(1);
+    this.changed();
+  }
+
+  reset() {
+    this.file = null;
+    this.items = [];
+    this.editor.hidden = true;
+    this.empty.hidden = false;
+    this.changed();
+  }
+
+  async showPage(n) {
+    const token = ++this.token;
+    let entry = this.cache.get(n);
+    if (!entry) {
+      this.loading.hidden = false;
+      try {
+        const form = new FormData();
+        form.append("files", this.file, this.file.name);
+        form.append("page", String(n));
+        form.append("width", String(clamp(Math.round((this.stage.clientWidth || 560) * (window.devicePixelRatio || 1)), 400, 1100)));
+        const { blob } = await this.api.send("api/preview", form);
+        const data = JSON.parse(await blob.text());
+        entry = { src: data.pages[0].src, total: data.count, w: data.w, h: data.h };
+        this.cache.set(n, entry);
+      } finally {
+        if (token === this.token) this.loading.hidden = true;
+      }
+    }
+    if (token !== this.token) return;
+    this.page = n;
+    this.total = entry.total;
+    this.pageW = entry.w;
+    this.img.src = entry.src;
+    await this.img.decode().catch(() => {});
+    this.selected = null;
+    this.updatePager();
+    this.render();
+  }
+
+  updatePager() {
+    this.pager.hidden = this.total <= 1;
+    this.countEl.textContent = t("pv.page", { n: this.page, total: this.total });
+    const [prev, next] = this.pager.querySelectorAll("[data-step]");
+    prev.disabled = this.page <= 1;
+    next.disabled = this.page >= this.total;
+  }
+
+  /* --- editing --- */
+
+  snapshot() { return structuredClone(this.items); }
+  remember(state = this.snapshot()) { this.history.record(state); }
+  undo() { const s = this.history.undo(this.snapshot()); if (s) { this.items = s; this.selected = null; this.render(); this.changed(); } }
+  redo() { const s = this.history.redo(this.snapshot()); if (s) { this.items = s; this.selected = null; this.render(); this.changed(); } }
+
+  addItems(items) {
+    if (!items.length) return;
+    this.remember();
+    items.forEach((i) => this.items.push({ id: this.nextId++, ...i }));
+    this.render();
+    this.changed();
+  }
+
+  clearAll() {
+    if (!this.items.length) return;
+    this.remember();
+    this.items = [];
+    this.selected = null;
+    this.render();
+    this.changed();
+  }
+
+  deleteSelected() {
+    const i = this.items.findIndex((it) => it.id === this.selected);
+    if (i < 0) return;
+    this.remember();
+    this.items.splice(i, 1);
+    this.selected = null;
+    this.render();
+    this.changed();
+  }
+
+  updateSelected(props) {
+    const item = this.items.find((it) => it.id === this.selected);
+    if (!item) return;
+    this.remember();
+    Object.assign(item, props);
+    this.render();
+    this.changed();
+  }
+
+  changed() {
+    this.root.querySelector("[data-undo]").disabled = !this.history.past.length;
+    this.root.querySelector("[data-redo]").disabled = !this.history.future.length;
+    this.root.querySelector("[data-delete]").disabled = !this.selected;
+    this.onChange?.();
+  }
+
+  point(e) {
+    const r = this.stage.getBoundingClientRect();
+    return { x: clamp((e.clientX - r.left) / r.width, 0, 1), y: clamp((e.clientY - r.top) / r.height, 0, 1) };
+  }
+
+  down(e) {
+    if (!this.file || e.target.isContentEditable) return;
+    if (this.editing) { this.editing.blur(); return; }
+    const p = this.point(e);
+    const hit = e.target.closest("[data-id]");
+    const hitItem = hit ? this.items.find((it) => it.id === Number(hit.dataset.id)) : null;
+    e.preventDefault();
+    this.stage.setPointerCapture(e.pointerId);
+    const before = this.snapshot();
+    if (this.tool === "select" || (hitItem && this.tool === "text" && hitItem.type === "text")) {
+      this.selected = hitItem?.id ?? null;
+      if (hitItem && this.tool === "text") { this.editText(hitItem); return; }
+      this.drag = hitItem ? { mode: "move", start: p, orig: structuredClone(hitItem), before, moved: false } : null;
+      this.render();
+      this.changed();
+      return;
+    }
+    const style = this.style(this.tool);
+    let item;
+    if (this.tool === "text") {
+      item = { id: this.nextId++, type: "text", page: this.page, x: p.x, y: p.y, size: style.size, color: style.color, text: "" };
+      this.items.push(item);
+      this.remember(before);
+      this.selected = item.id;
+      this.render();
+      this.editText(item, true);
+      return;
+    }
+    if (this.tool === "line" || this.tool === "arrow") {
+      item = { id: this.nextId++, type: this.tool, page: this.page, x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: style.color };
+    } else {
+      item = { id: this.nextId++, type: this.tool, page: this.page, x: p.x, y: p.y, w: 0, h: 0, color: style.color };
+    }
+    this.items.push(item);
+    this.drag = { mode: "draw", start: p, item, before };
+    this.render();
+  }
+
+  moveTo(e) {
+    if (!this.drag) return;
+    const p = this.point(e);
+    const d = this.drag;
+    if (d.mode === "draw") {
+      const it = d.item;
+      if (it.type === "line" || it.type === "arrow") {
+        it.x2 = p.x; it.y2 = p.y;
+      } else {
+        it.x = Math.min(d.start.x, p.x); it.y = Math.min(d.start.y, p.y);
+        it.w = Math.abs(p.x - d.start.x); it.h = Math.abs(p.y - d.start.y);
+      }
+    } else {
+      const item = this.items.find((it) => it.id === d.orig.id);
+      const o = d.orig;
+      let dx = p.x - d.start.x;
+      let dy = p.y - d.start.y;
+      d.moved = d.moved || Math.abs(dx) + Math.abs(dy) > 0.002;
+      if (o.type === "line" || o.type === "arrow") {
+        dx = clamp(dx, -Math.min(o.x1, o.x2), 1 - Math.max(o.x1, o.x2));
+        dy = clamp(dy, -Math.min(o.y1, o.y2), 1 - Math.max(o.y1, o.y2));
+        Object.assign(item, { x1: o.x1 + dx, y1: o.y1 + dy, x2: o.x2 + dx, y2: o.y2 + dy });
+      } else {
+        item.x = clamp(o.x + dx, 0, 1 - (o.w ?? 0.02));
+        item.y = clamp(o.y + dy, 0, 1 - (o.h ?? 0.02));
+      }
+    }
+    this.render();
+  }
+
+  up() {
+    const d = this.drag;
+    this.drag = null;
+    if (!d) return;
+    if (d.mode === "draw") {
+      const it = d.item;
+      const tiny = it.type === "line" || it.type === "arrow"
+        ? Math.hypot(it.x2 - it.x1, it.y2 - it.y1) < 0.01
+        : it.w < 0.004 || it.h < 0.004;
+      if (tiny) this.items = this.items.filter((x) => x !== it);
+      else this.remember(d.before);
+    } else if (d.moved) {
+      this.remember(d.before);
+    }
+    this.render();
+    this.changed();
+  }
+
+  /** Inline text editing; an empty text item disappears when you leave it. */
+  editText(item, isNew = false) {
+    const node = this.layer.querySelector(`[data-id="${item.id}"]`);
+    if (!node) return;
+    node.contentEditable = "plaintext-only";
+    node.classList.add("editing");
+    node.dataset.placeholder = t("ed.textPh");
+    node.focus();
+    const before = isNew ? null : this.snapshot();
+    this.editing = node;
+    const finish = () => {
+      node.removeEventListener("blur", finish);
+      this.editing = null;
+      const text = node.innerText.replace(/\n+$/, "");
+      if (!text.trim()) {
+        this.items = this.items.filter((x) => x.id !== item.id);
+        if (isNew) this.history.past.pop(); // nothing was added after all
+        this.selected = null;
+      } else if (text !== item.text) {
+        if (before) this.remember(before);
+        item.text = text;
+      }
+      this.render();
+      this.changed();
+    };
+    node.addEventListener("blur", finish);
+    node.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" || (e.key === "Enter" && !e.shiftKey)) { e.preventDefault(); node.blur(); }
+      e.stopPropagation(); // typing must not trigger editor shortcuts
+    });
+  }
+
+  render() {
+    if (!this.file || this.editing) return;
+    const W = this.stage.clientWidth;
+    const H = this.stage.clientHeight;
+    const scale = this.pageW ? W / this.pageW : 1;
+    this.svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    const nodes = [];
+    const shapes = [];
+    for (const it of this.items.filter((x) => x.page === this.page)) {
+      const selected = it.id === this.selected;
+      if (it.type === "line" || it.type === "arrow") {
+        const [x1, y1, x2, y2] = [it.x1 * W, it.y1 * H, it.x2 * W, it.y2 * H];
+        const width = 3 * scale;
+        const svgNs = "http://www.w3.org/2000/svg";
+        const g = document.createElementNS(svgNs, "g");
+        g.dataset.id = it.id;
+        const hitLine = document.createElementNS(svgNs, "line");
+        Object.entries({ x1, y1, x2, y2, class: "hit" }).forEach(([k, v]) => hitLine.setAttribute(k, v));
+        const line = document.createElementNS(svgNs, "line");
+        Object.entries({ x1, y1, x2, y2, stroke: it.color, "stroke-width": width, "stroke-linecap": "round" })
+          .forEach(([k, v]) => line.setAttribute(k, v));
+        if (selected) line.setAttribute("class", "selected");
+        g.append(hitLine, line);
+        if (it.type === "arrow") {
+          const angle = Math.atan2(y2 - y1, x2 - x1);
+          const head = Math.max(8, 12) * scale;
+          const spread = Math.PI / 7.2;
+          const pts = [[x2, y2],
+            [x2 - head * Math.cos(angle - spread), y2 - head * Math.sin(angle - spread)],
+            [x2 - head * Math.cos(angle + spread), y2 - head * Math.sin(angle + spread)]];
+          const poly = document.createElementNS(svgNs, "polygon");
+          poly.setAttribute("points", pts.map((q) => q.join(",")).join(" "));
+          poly.setAttribute("fill", it.color);
+          g.append(poly);
+        }
+        shapes.push(g);
+        continue;
+      }
+      const node = el("div", { className: `ed-item ed-${it.type}${selected ? " selected" : ""}` });
+      node.dataset.id = it.id;
+      node.style.left = `${it.x * 100}%`;
+      node.style.top = `${it.y * 100}%`;
+      if (it.type === "text") {
+        node.textContent = it.text;
+        node.style.fontSize = `${it.size * scale}px`;
+        node.style.color = it.color;
+      } else {
+        node.style.width = `${it.w * 100}%`;
+        node.style.height = `${it.h * 100}%`;
+        if (it.type === "highlight") node.style.background = it.color;
+        if (it.type === "rect") node.style.borderColor = it.color;
+      }
+      nodes.push(node);
+    }
+    this.layer.replaceChildren(...nodes);
+    this.svg.replaceChildren(...shapes);
+  }
+}
+
+class RedactPanel extends ToolPanel {
+  constructor(tool, section, ctx) {
+    super(tool, section, ctx, { single: true });
+    this.editor = new PageEditor(section.querySelector(".preview-pane"), this.api, {
+      tools: [{ id: "box", icon: "square", label: "ed.box" }, { id: "select", icon: "arrow-pointer", label: "ed.select" }],
+      defaultTool: "box", style: () => ({ color: "#000000" }), onChange: () => this.changed(),
+    });
+    this.findInput = this.field("find");
+    this.findResult = section.querySelector(".find-result");
+    section.querySelector("[data-find]").addEventListener("click", () => this.find());
+    this.findInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); this.find(); } });
+    section.querySelector("[data-clear-all]").addEventListener("click", () => this.editor.clearAll());
+    i18n.onChange(() => this.changed());
+  }
+
+  changed() {
+    const n = this.editor?.items.length ?? 0;
+    this.section.querySelector(".item-count").textContent = n ? t("ed.count", { n }) : "";
+    this.refresh();
+  }
+
+  ready() { return !!this.editor?.file && this.editor.items.length > 0; }
+  endpoint() { return "api/redact"; }
+  validate() { return this.editor.items.length ? null : t("v.noBoxes"); }
+
+  async filesChanged() {
+    this.hideNext();
+    this.findResult.textContent = "";
+    const file = this.files.files[0];
+    if (!file) { this.editor.reset(); return; }
+    if (ext(file.name) !== "pdf") { this.status.error(t("v.pdfOnly")); return; }
+    this.status.busy(t("b.loadPage"));
+    try {
+      await this.editor.load(file);
+      this.status.clear();
+    } catch (err) {
+      this.status.error(err.message);
+    }
+    this.refresh();
+  }
+
+  async find() {
+    const q = this.findInput.value.trim();
+    const file = this.files.files[0];
+    if (!file || q.length < 2) return;
+    const form = new FormData();
+    form.append("files", file, file.name);
+    form.append("q", q);
+    try {
+      const { blob } = await this.api.send("api/find-text", form);
+      const matches = JSON.parse(await blob.text()).matches;
+      this.editor.addItems(matches.map((m) => ({ type: "box", page: m.page, x: m.x, y: m.y, w: m.w, h: m.h, color: "#000000" })));
+      this.findResult.textContent = matches.length ? t("rd.found", { n: matches.length }) : t("rd.none");
+      if (matches.length && !matches.some((m) => m.page === this.editor.page)) await this.editor.showPage(matches[0].page);
+    } catch (err) {
+      this.findResult.textContent = err.message;
+    }
+  }
+
+  fillForm(form) {
+    const f = (v) => clamp(v, 0, 1).toFixed(5);
+    for (const b of this.editor.items) {
+      const x = clamp(b.x, 0, 1);
+      const y = clamp(b.y, 0, 1);
+      form.append("box", `${b.page}:${f(x)},${f(y)},${f(Math.min(b.w, 1 - x))},${f(Math.min(b.h, 1 - y))}`);
+    }
+    form.append("removeMetadata", String(this.field("removeMetadata").checked));
+  }
+}
+
+class AnnotatePanel extends ToolPanel {
+  constructor(tool, section, ctx) {
+    super(tool, section, ctx, { single: true });
+    this.colors = { text: "#1d2b4f", highlight: "#ffd400", rect: "#c73a2a", line: "#c73a2a", arrow: "#c73a2a", select: "#1d2b4f" };
+    this.colorInput = this.field("color");
+    this.sizeSelect = this.field("textSize");
+    this.editor = new PageEditor(section.querySelector(".preview-pane"), this.api, {
+      tools: [
+        { id: "select", icon: "arrow-pointer", label: "ed.select" },
+        { id: "text", icon: "font", label: "ed.text" },
+        { id: "highlight", icon: "highlighter", label: "ed.highlight" },
+        { id: "rect", icon: "vector-square", label: "ed.rect" },
+        { id: "line", icon: "minus", label: "ed.line" },
+        { id: "arrow", icon: "arrow-right-long", label: "ed.arrow" },
+      ],
+      defaultTool: "text",
+      style: (tool) => ({ color: this.colors[tool], size: Number(this.sizeSelect.value) }),
+      onChange: () => this.changed(),
+    });
+    this.editor.onToolChange = (id) => { this.colorInput.value = this.colors[id]; };
+    this.colorInput.addEventListener("input", () => {
+      this.colors[this.editor.tool] = this.colorInput.value;
+      this.editor.updateSelected({ color: this.colorInput.value });
+    });
+    this.sizeSelect.addEventListener("change", () => {
+      const item = this.editor.items.find((it) => it.id === this.editor.selected);
+      if (item?.type === "text") this.editor.updateSelected({ size: Number(this.sizeSelect.value) });
+    });
+    i18n.onChange(() => this.changed());
+  }
+
+  changed() {
+    const n = this.editor?.items.length ?? 0;
+    this.section.querySelector(".item-count").textContent = n ? t("ed.count", { n }) : "";
+    this.refresh();
+  }
+
+  ready() { return !!this.editor?.file && this.editor.items.length > 0; }
+  endpoint() { return "api/annotate"; }
+  validate() { return this.editor.items.length ? null : t("v.noMarks"); }
+
+  async filesChanged() {
+    this.hideNext();
+    const file = this.files.files[0];
+    if (!file) { this.editor.reset(); return; }
+    if (ext(file.name) !== "pdf") { this.status.error(t("v.pdfOnly")); return; }
+    this.status.busy(t("b.loadPage"));
+    try {
+      await this.editor.load(file);
+      this.status.clear();
+    } catch (err) {
+      this.status.error(err.message);
+    }
+    this.refresh();
+  }
+
+  fillForm(form) {
+    const f = (v) => clamp(v, 0, 1).toFixed(5);
+    for (const it of this.editor.items) {
+      switch (it.type) {
+        case "text":
+          form.append("mark", `text|${it.page}|${f(it.x)}|${f(it.y)}|${it.size}|${it.color}|${encodeURIComponent(it.text)}`);
+          break;
+        case "highlight":
+          form.append("mark", `rect|${it.page}|${f(it.x)}|${f(it.y)}|${f(Math.min(it.w, 1 - it.x))}|${f(Math.min(it.h, 1 - it.y))}|${it.color}|fill|0.35`);
+          break;
+        case "rect":
+          form.append("mark", `rect|${it.page}|${f(it.x)}|${f(it.y)}|${f(Math.min(it.w, 1 - it.x))}|${f(Math.min(it.h, 1 - it.y))}|${it.color}|stroke|1`);
+          break;
+        default:
+          form.append("mark", `line|${it.page}|${f(it.x1)}|${f(it.y1)}|${f(it.x2)}|${f(it.y2)}|${it.color}|3|${it.type === "arrow" ? "arrow" : "plain"}`);
+      }
+    }
+  }
+}
+
+class FormsPanel extends ToolPanel {
+  constructor(tool, section, ctx) {
+    super(tool, section, ctx, { single: true });
+    this.container = section.querySelector(".form-fields");
+    i18n.onChange(() => this.renderFields());
+  }
+
+  ready() { return (this.fields?.length ?? 0) > 0; }
+  endpoint() { return "api/fill-form"; }
+
+  async filesChanged() {
+    super.filesChanged();
+    this.fields = null;
+    this.container.replaceChildren();
+    const file = this.files.files[0];
+    if (!file) return;
+    if (ext(file.name) !== "pdf") { this.status.error(t("v.pdfOnly")); return; }
+    const form = new FormData();
+    form.append("files", file, file.name);
+    this.status.busy(t("fm.loading"));
+    try {
+      const { blob } = await this.api.send("api/form-fields", form);
+      this.fields = JSON.parse(await blob.text()).fields;
+      this.values = Object.fromEntries(this.fields.map((f) => [f.name, f.value]));
+      this.renderFields();
+      this.status.clear();
+    } catch (err) {
+      this.status.error(err.message);
+    }
+    this.refresh();
+  }
+
+  renderFields() {
+    if (!this.fields) return;
+    const rows = this.fields.map((f, i) => {
+      const id = `form-field-${i}`;
+      const title = el("span", { textContent: f.label || f.name });
+      if (f.required) title.append(el("small", { className: "req", textContent: ` (${t("fm.required")})` }));
+      const set = (v) => { this.values[f.name] = v; };
+      let control;
+      switch (f.type) {
+        case "checkbox": {
+          const box = el("input", { type: "checkbox", id, checked: this.values[f.name] === "true", disabled: f.readOnly,
+            onchange: (e) => set(String(e.target.checked)) });
+          return el("label", { className: "check-inline form-row" }, box, title);
+        }
+        case "radio": {
+          const fs = el("fieldset", { className: "choice form-row" }, el("legend", {}, title));
+          f.options.forEach((opt) => fs.append(el("label", {},
+            el("input", { type: "radio", name: id, value: opt, checked: this.values[f.name] === opt, disabled: f.readOnly,
+              onchange: () => set(opt) }), ` ${opt}`)));
+          return fs;
+        }
+        case "choice":
+          control = el("select", { id, disabled: f.readOnly, onchange: (e) => set(e.target.value) },
+            el("option", { value: "", textContent: t("fm.choose") }),
+            ...f.options.map((o) => el("option", { value: o, textContent: o, selected: this.values[f.name] === o })));
+          break;
+        default:
+          control = el(f.multiline ? "textarea" : "input", { id, value: this.values[f.name] ?? "", disabled: f.readOnly,
+            required: f.required, oninput: (e) => set(e.target.value) });
+          if (f.maxLength > 0) control.maxLength = f.maxLength;
+      }
+      return el("label", { className: "form-row", htmlFor: id }, title, control);
+    });
+    this.container.replaceChildren(el("p", { className: "note", textContent: t("fm.fields", { n: this.fields.length }) }), ...rows);
+  }
+
+  fillForm(form) {
+    for (const f of this.fields) {
+      if (!f.readOnly) form.append(`field.${f.name}`, this.values[f.name] ?? "");
+    }
+    form.append("flatten", String(this.field("flatten").checked));
+  }
+}
+
+class PdfaPanel extends ToolPanel {
+  constructor(tool, section, ctx) {
+    super(tool, section, ctx, { single: true });
+    if (!ctx.info.pdfa) {
+      this.disabled = true;
+      section.querySelector(".notice").hidden = false;
+      this.zone.hidden = true;
+      this.refresh();
+    }
+  }
+  endpoint() { return "api/pdfa"; }
+  validate() { return this.requireExt(["pdf"], "v.pdfOnly"); }
+}
+
+/* ---------- Recent results (kept in this tab only) ---------------------------- */
+
+class RecentResults {
+  constructor(app) {
+    this.app = app;
+    this.root = document.getElementById("recent");
+    this.list = this.root.querySelector(".recent-list");
+    this.items = [];
+    this.root.querySelector("[data-recent-clear]").addEventListener("click", () => {
+      this.items.forEach((it) => URL.revokeObjectURL(it.url));
+      this.items = [];
+      this.render();
+    });
+    i18n.onChange(() => this.render());
+  }
+
+  add(file, toolId) {
+    this.items.unshift({ file, toolId, url: URL.createObjectURL(file) });
+    let total = this.items.reduce((sum, it) => sum + it.file.size, 0);
+    while (this.items.length > 12 || (total > 300 * 1024 * 1024 && this.items.length > 1)) {
+      const old = this.items.pop();
+      total -= old.file.size;
+      URL.revokeObjectURL(old.url);
+    }
+    this.render();
+  }
+
+  render() {
+    this.root.hidden = !this.items.length;
+    this.list.replaceChildren(...this.items.map((it) => {
+      const link = el("a", { href: it.url, download: it.file.name, className: "recent-name", textContent: it.file.name });
+      link.setAttribute("aria-label", t("recent.download", { name: it.file.name }));
+      const ids = nextToolIds(it.file).filter((id) => this.app.panels[id]);
+      const use = el("details", { className: "recent-use" },
+        el("summary", { textContent: t("recent.use") }),
+        el("div", {}, ...ids.slice(0, 8).map((id) => el("button", {
+          type: "button", className: "chip", onclick: () => this.app.open(id, [it.file]),
+        }, icon(this.app.tools[id].icon), t(`tool.${id}.name`)))));
+      return el("li", {}, fileIcon(it.file.name),
+        el("span", { className: "recent-info" }, link,
+          el("small", { textContent: t("recent.meta", { tool: t(`tool.${it.toolId}.name`), size: formatSize(it.file.size) }) })),
+        ids.length ? use : "");
+    }));
   }
 }
 
@@ -1303,6 +2123,8 @@ const TOOLS = [
     action: "file-pdf", keywords: "jpg png photo picture scan image to pdf picha" },
   { id: "ocr", group: "convert", icon: "spell-check", color: "blue", Panel: OcrPanel, accept: () => `${PDF_ONLY},${IMAGES}`,
     action: "spell-check", keywords: "ocr text recognize scan searchable read soma maandishi tambua" },
+  { id: "pdfa", group: "convert", icon: "box-archive", color: "blue", Panel: PdfaPanel, accept: () => PDF_ONLY,
+    action: "box-archive", keywords: "pdfa pdf/a archive archival court long term hifadhi kumbukumbu archiver archive أرشفة" },
   { id: "merge", group: "organize", icon: "layer-group", color: "teal", Panel: MergePanel, multiple: true,
     accept: (info) => info.read.map((e) => `.${e}`).join(","), action: "layer-group",
     keywords: "merge combine join append unganisha" },
@@ -1316,12 +2138,18 @@ const TOOLS = [
     action: "file-export", keywords: "extract images pictures photos save toa picha" },
   { id: "compress", group: "edit", icon: "file-zipper", color: "amber", Panel: CompressPanel, multiple: true, accept: () => PDF_ONLY,
     action: "file-zipper", keywords: "compress shrink reduce smaller size email optimize punguza ndogo" },
+  { id: "annotate", group: "edit", icon: "pen-to-square", color: "amber", Panel: AnnotatePanel, accept: () => PDF_ONLY,
+    action: "floppy-disk", side: "editor", keywords: "edit text write annotate highlight arrow box shapes draw note andika angazia écrire surligner كتابة تظليل" },
+  { id: "forms", group: "edit", icon: "file-pen", color: "amber", Panel: FormsPanel, accept: () => PDF_ONLY,
+    action: "floppy-disk", keywords: "form fill fields application jaza fomu formulaire remplir نموذج تعبئة" },
   { id: "watermark", group: "edit", icon: "stamp", color: "amber", Panel: WatermarkPanel, accept: () => PDF_ONLY,
     action: "stamp", keywords: "watermark stamp confidential draft logo brand alama maji nembo" },
   { id: "number", group: "edit", icon: "list-ol", color: "amber", Panel: NumberPanel, accept: () => PDF_ONLY,
     action: "list-ol", keywords: "page numbers numbering footer header namba kurasa" },
   { id: "protect", group: "secure", icon: "lock", color: "purple", Panel: ProtectPanel, accept: () => PDF_ONLY,
     action: "lock", keywords: "protect password encrypt lock unlock remove security linda nenosiri fungua" },
+  { id: "redact", group: "secure", icon: "user-secret", color: "purple", Panel: RedactPanel, accept: () => PDF_ONLY,
+    action: "user-secret", side: "editor", keywords: "redact black out hide remove private censor ficha siri caviarder masquer تنقيح حجب" },
   { id: "sign", group: "secure", icon: "signature", color: "purple", Panel: SignPanel, accept: () => PDF_ONLY,
     action: "file-signature", side: "sign", keywords: "sign signature autograph esign saini sahihi" },
 ];
@@ -1338,6 +2166,8 @@ class App {
     this.main = document.getElementById("main");
     this.home = document.getElementById("view-home");
     this.search = document.getElementById("tool-search");
+    this.thumbnails = new Thumbnails(api);
+    this.recent = new RecentResults(this);
 
     for (const tool of TOOLS) {
       const section = this.buildSection(tool);
@@ -1351,6 +2181,7 @@ class App {
     this.wireLanguage();
     this.wireInstall();
     this.wireGlobalDrop();
+    this.wireShortcuts();
     i18n.onChange(() => { this.renderHome(); this.updateTitle(); this.renderLimits(); });
     this.renderLimits();
     window.addEventListener("hashchange", () => this.route());
@@ -1491,11 +2322,32 @@ class App {
   }
 
   wireLanguage() {
-    const buttons = document.querySelectorAll("[data-lang]");
-    const mark = () => buttons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.lang === i18n.lang)));
-    buttons.forEach((b) => b.addEventListener("click", () => i18n.set(b.dataset.lang)));
-    i18n.onChange(mark);
-    mark();
+    const select = document.getElementById("lang-select");
+    select.value = i18n.lang;
+    select.addEventListener("change", () => i18n.set(select.value));
+    i18n.onChange(() => { select.value = i18n.lang; });
+  }
+
+  /** Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y) and Delete in the open tool, unless you're typing. */
+  wireShortcuts() {
+    document.addEventListener("keydown", (e) => {
+      const panel = this.panels[this.current];
+      if (!panel) return;
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
+      if (typing) return;
+      const target = panel.editor ?? panel;
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === "z" && target.undo) {
+        e.preventDefault();
+        if (e.shiftKey) target.redo?.(); else target.undo();
+      } else if (mod && e.key.toLowerCase() === "y" && target.redo) {
+        e.preventDefault();
+        target.redo();
+      } else if ((e.key === "Delete" || e.key === "Backspace") && panel.editor?.selected) {
+        e.preventDefault();
+        panel.editor.deleteSelected();
+      }
+    });
   }
 
   wireInstall() {
