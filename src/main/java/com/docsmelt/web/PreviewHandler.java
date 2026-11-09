@@ -72,7 +72,9 @@ final class PreviewHandler extends ApiHandler {
                 float pageWidth = sideways ? box.getHeight() : box.getWidth();
                 float scale = Limits.renderScale(box.getWidth(), box.getHeight(), width / pageWidth);
                 BufferedImage img = renderer.renderImage(index, scale, ImageType.RGB);
+                float pageHeight = sideways ? box.getWidth() : box.getHeight();
                 return new Reply.Json("{\"count\":" + count + ",\"page\":" + (index + 1)
+                        + ",\"w\":" + Math.round(pageWidth) + ",\"h\":" + Math.round(pageHeight)
                         + ",\"pages\":[{\"src\":\"data:image/jpeg;base64," + jpegBase64(img) + "\",\"rotation\":0}]}");
             }
 
